@@ -4,15 +4,16 @@ import getpass
 import os
 import sys
 
-DEFAULT_SECRET_DIR = os.path.abspath(os.getcwd())
+DEFAULT_SECRET_DIR = os.path.abspath(os.getcwd()) + "/config/"
 
 
 def get_credential_file(base_path=DEFAULT_SECRET_DIR):
-    return base_path + "/config/secret.txt"
+    return base_path + "secret.txt"
 
 
 def add_credentials(base_path):
     SECRET_FILE = get_credential_file(base_path)
+
     with open(SECRET_FILE, "a") as f:
         print("Enter your login: ")
         f.write(str(sys.stdin.readline().strip()) + ":")
@@ -26,7 +27,7 @@ def add_credentials(base_path):
 def get_credentials(base_path, username=None):
     SECRET_FILE = get_credential_file(base_path)
     """Returns login and password stored in `secret.txt`."""
-    while not check_secret():
+    while not check_secret(base_path=base_path):
         pass
     while True:
         try:
@@ -59,7 +60,7 @@ def get_credentials(base_path, username=None):
             print("Wrong input, enter the number of the account to use.")
 
 
-def check_secret(base_path):
+def check_secret(base_path=DEFAULT_SECRET_DIR):
     SECRET_FILE = get_credential_file(base_path)
     while True:
         if os.path.exists(SECRET_FILE):
