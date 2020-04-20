@@ -254,10 +254,8 @@ class API(object):
         ask_for_code=False,
         set_device=True,
         generate_all_uuids=True,
-        is_threaded=False,
-        two_factor_code=None
+        is_threaded=False
     ):
-        self.two_factor_code = two_factor_code
         if password is None:
             if not self.cli:
                 self.logger.error("Password is not provided while cli is disabled!")
@@ -373,7 +371,7 @@ class API(object):
         self.logger.info("Two-factor authentication required")
         if not self.two_factor_code:
             if not self.cli:
-                self.logger.error("2FA code is not provided in login.")
+                self.logger.error("2FA code is not provided in login for non-cli usage.")
                 return False
             two_factor_code = input("Enter 2FA verification code: ")
         else:
