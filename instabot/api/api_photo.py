@@ -256,15 +256,26 @@ def upload_album(
         if not result:
             self.logger.error("Could not upload photo {photo} for the album!".format(photo=photo))
             return False
-        photo_metas.append(result)
+        upload_config = {
+            "upload_id": str(result["upload_id"]), "width": int(result["edits"]["crop_original_size"][0]),
+            "height": int(result["edits"]["crop_original_size"][1])
+        }
+        if "usertags" in result:
+            upload_config["usertags"] = result["usertags"]
+        photo_metas.append(upload_config)
     if upload_id is None:
-        upload_id = int(time.time() * 1000)
+        upload_id = str(int(time.time() * 1000))
     data = self.json_data({
+        "timezone_offset": "0",
+        "source_type": "4",
+        "device_id": self.device_id,
         "caption": caption,
         "client_sidecar_id": upload_id,
+        "upload_id": upload_id,
+        "device": result["device"],
         "children_metadata": photo_metas
     })
-    return self.send_request("media/configure_sidecar/?", post=data)
+    return self.send_request("media/configure_sidecar/", post=data)
 
 
 def get_image_size(fname):
