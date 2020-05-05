@@ -72,6 +72,7 @@ class API(object):
         log_filename=None,
         loglevel_file=logging.DEBUG,
         loglevel_stream=logging.INFO,
+        cli=True
     ):
         # Setup device and user_agent
         self.device = device or devices.DEFAULT_DEVICE
@@ -84,6 +85,9 @@ class API(object):
 
         self.last_response = None
         self.total_requests = 0
+
+        self.two_factor_code = None
+        self.cli = cli
 
         # Setup logging
         # instabot_version = Bot.version()
@@ -247,6 +251,9 @@ class API(object):
 
         return f"#PWD_INSTAGRAM:4:{time}:{base64_encoded_payload.decode()}"
 
+    def set_two_factor_code(self, code):
+        self.two_factor_code = code
+
     def login(
         self,
         username=None,
@@ -259,9 +266,12 @@ class API(object):
         ask_for_code=False,
         set_device=True,
         generate_all_uuids=True,
-        is_threaded=False,
+        is_threaded=False
     ):
         if password is None:
+            if not self.cli:
+                self.logger.error("Password is not provided while cli is disabled!")
+                return False
             username, password = get_credentials(
                 base_path=self.base_path, username=username
             )
@@ -371,7 +381,13 @@ class API(object):
 
     def two_factor_auth(self):
         self.logger.info("Two-factor authentication required")
-        two_factor_code = input("Enter 2FA verification code: ")
+        if not self.two_factor_code:
+            if not self.cli:
+                self.logger.error("2FA code is not provided in login for non-cli usage.")
+                return False
+            two_factor_code = input("Enter 2FA verification code: ")
+        else:
+            two_factor_code = self.two_factor_code
         two_factor_id = self.last_json["two_factor_info"]["two_factor_identifier"]
 
         login = self.session.post(
@@ -430,6 +446,9 @@ class API(object):
         choices = self.get_challenge_choices()
         for choice in choices:
             print(choice)
+        if not self.cli:
+            self.logger.error("Solving interactive challenge is not possible in non-cli mode.")
+            return False
         code = input("Insert choice: ")
 
         data = json.dumps({"choice": code})

@@ -187,7 +187,9 @@ class Bot(object):
         loglevel_file=logging.DEBUG,
         loglevel_stream=logging.INFO,
         log_follow_unfollow=True,
+        cli=True,
     ):
+        self.cli = cli
         self.api = API(
             device=device,
             base_path=base_path,
@@ -195,6 +197,7 @@ class Bot(object):
             log_filename=log_filename,
             loglevel_file=loglevel_file,
             loglevel_stream=loglevel_stream,
+            cli=cli
         )
         self.log_follow_unfollow = log_follow_unfollow
         self.base_path = base_path
@@ -433,19 +436,22 @@ class Bot(object):
         )
         self.print_counters()
 
-    def login(self, **args):
+    def login(self, **kwargs):
         """if login function is run threaded, for example in scheduled job,
         signal will fail because it 'only works in main thread'.
         In this case, you may want to call login(is_threaded=True).
+        Provide 2FA code with two_factor_code key for the first time when it is needed for the first login.
         """
         if self.proxy:
-            args["proxy"] = self.proxy
-        if self.api.login(**args) is False:
+            kwargs["proxy"] = self.proxy
+        if "two_factor_code" in kwargs:
+            self.api.set_two_factor_code(kwargs.pop("two_factor_code"))
+        if self.api.login(**kwargs) is False:
             return False
         self.prepare()
         atexit.register(self.print_counters)
-        if "is_threaded" in args:
-            if args["is_threaded"]:
+        if "is_threaded" in kwargs:
+            if kwargs["is_threaded"]:
                 return True
         signal.signal(signal.SIGTERM, self.print_counters)
         return True
