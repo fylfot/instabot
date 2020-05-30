@@ -437,6 +437,9 @@ class API(object):
     def get_last_json(self):
         return self.last_json
 
+    def set_last_json(self, last_json):
+        self.last_json = last_json
+
     def solve_challenge(self):
         challenge_url = self.last_json["challenge"]["api_path"][1:]
         try:
