@@ -1789,12 +1789,23 @@ class API(object):
         if item_type == "link":
             data["link_text"] = text
             data["link_urls"] = json.dumps(options.get("urls"))
+            
         elif item_type == "text":
             data["text"] = text
+            
+        elif item_type == "reel_share":
+            # media_id = 2335809274517038399_8444380839
+            data["text"] = text
+            data["media_type"] = options.get("media_type", "photo")
+            data['media_id'] = options.get("media_id", "")
+            (_, reel_id) = data['media_id'].split('_')
+            data['reel_id'] = reel_id
+            
         elif item_type == "media_share":
             data["text"] = text
             data["media_type"] = options.get("media_type", "photo")
             data["media_id"] = options.get("media_id", "")
+            
         elif item_type == "hashtag":
             data["text"] = text
             data["hashtag"] = options.get("hashtag", "")
