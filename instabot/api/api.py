@@ -26,10 +26,12 @@ from .api_login import (
     change_device_simulation,
     generate_all_uuids,
     load_uuid_and_cookie,
+    load_uuid_and_cookie_with_data,
     login_flow,
     pre_login_flow,
     reinstall_app_simulation,
     save_uuid_and_cookie,
+    get_uuid_and_cookie_data,
     set_device,
     sync_launcher,
     get_prefill_candidates,
@@ -44,20 +46,18 @@ from .api_login import (
 from .api_photo import configure_photo, download_photo, upload_photo, upload_album
 from .api_story import configure_story, download_story, upload_story_photo
 from .api_video import configure_video, download_video, upload_video
+from .instagram_exceptions import TwoFactorRequiredException, CheckpointChallengeRequiredException
 from .prepare import delete_credentials, get_credentials
-
 
 try:
     from json.decoder import JSONDecodeError
 except ImportError:
     JSONDecodeError = ValueError
 
-
 version_info = sys.version_info[0:3]
 is_py2 = version_info[0] == 2
 is_py3 = version_info[0] == 3
 is_py37 = version_info[:2] == (3, 7)
-
 
 version = "0.117.0"
 current_path = os.path.abspath(os.getcwd())
@@ -65,14 +65,14 @@ current_path = os.path.abspath(os.getcwd())
 
 class API(object):
     def __init__(
-        self,
-        device=None,
-        base_path=current_path + "/config/",
-        save_logfile=True,
-        log_filename=None,
-        loglevel_file=logging.DEBUG,
-        loglevel_stream=logging.INFO,
-        cli=True
+            self,
+            device=None,
+            base_path=current_path + "/config/",
+            save_logfile=True,
+            log_filename=None,
+            loglevel_file=logging.DEBUG,
+            loglevel_stream=logging.INFO,
+            cli=True
     ):
         # Setup device and user_agent
         self.device = device or devices.DEFAULT_DEVICE
@@ -217,6 +217,12 @@ class API(object):
     def save_uuid_and_cookie(self):
         return save_uuid_and_cookie(self)
 
+    def get_uuid_and_cookie_data(self):
+        return get_uuid_and_cookie_data(self)
+
+    def load_uuid_and_cookie_with_data(self, load_uuid=True, load_cookie=True):
+        return load_uuid_and_cookie_with_data(self, load_uuid, load_cookie)
+
     def encrypt_password(self, password):
         IG_LOGIN_ANDROID_PUBLIC_KEY = "LS0tLS1CRUdJTiBQVUJMSUMgS0VZLS0tLS0KTUlJQklqQU5CZ2txaGtpRzl3MEJBUUVGQUFPQ0FROEFNSUlCQ2dLQ0FRRUF1enRZOEZvUlRGRU9mK1RkTGlUdAplN3FIQXY1cmdBMmk5RkQ0YjgzZk1GK3hheW14b0xSdU5KTitRanJ3dnBuSm1LQ0QxNGd3K2w3TGQ0RHkvRHVFCkRiZlpKcmRRWkJIT3drS3RqdDdkNWlhZFdOSjdLczlBM0NNbzB5UktyZFBGU1dsS21lQVJsTlFrVXF0YkNmTzcKT2phY3ZYV2dJcGlqTkdJRVk4UkdzRWJWZmdxSmsrZzhuQWZiT0xjNmEwbTMxckJWZUJ6Z0hkYWExeFNKOGJHcQplbG4zbWh4WDU2cmpTOG5LZGk4MzRZSlNaV3VxUHZmWWUrbEV6Nk5laU1FMEo3dE80eWxmeWlPQ05ycnF3SnJnCjBXWTFEeDd4MHlZajdrN1NkUWVLVUVaZ3FjNUFuVitjNUQ2SjJTSTlGMnNoZWxGNWVvZjJOYkl2TmFNakpSRDgKb1FJREFRQUIKLS0tLS1FTkQgUFVCTElDIEtFWS0tLS0tCg=="
         IG_LOGIN_ANDROID_PUBLIC_KEY_ID = 205
@@ -238,13 +244,13 @@ class API(object):
         encrypted_password, tag = cipher.encrypt_and_digest(password.encode())
 
         payload = (
-            b"\x01"
-            + str(IG_LOGIN_ANDROID_PUBLIC_KEY_ID).encode()
-            + iv
-            + b"0001"
-            + encrypted_aes_key
-            + tag
-            + encrypted_password
+                b"\x01"
+                + str(IG_LOGIN_ANDROID_PUBLIC_KEY_ID).encode()
+                + iv
+                + b"0001"
+                + encrypted_aes_key
+                + tag
+                + encrypted_password
         )
 
         base64_encoded_payload = base64.b64encode(payload)
@@ -255,18 +261,17 @@ class API(object):
         self.two_factor_code = code
 
     def login(
-        self,
-        username=None,
-        password=None,
-        force=False,
-        proxy=None,
-        use_cookie=True,
-        use_uuid=True,
-        cookie_fname=None,
-        ask_for_code=False,
-        set_device=True,
-        generate_all_uuids=True,
-        is_threaded=False
+            self,
+            username=None,
+            password=None,
+            force=False,
+            proxy=None,
+            use_cookie=True,
+            use_uuid=True,
+            cookie_fname=None,
+            set_device=True,
+            generate_all_uuids=True,
+            is_threaded=False
     ):
         if password is None:
             if not self.cli:
@@ -295,8 +300,8 @@ class API(object):
         if use_cookie is True:
             # try:
             if (
-                self.load_uuid_and_cookie(load_cookie=use_cookie, load_uuid=use_uuid)
-                is True
+                    self.load_uuid_and_cookie(load_cookie=use_cookie, load_uuid=use_uuid)
+                    is True
             ):
                 # Check if the token loaded is valid.
                 if self.login_flow(False) is True:
@@ -311,10 +316,10 @@ class API(object):
             self.session = requests.Session()
             if use_uuid is True:
                 if (
-                    self.load_uuid_and_cookie(
-                        load_cookie=use_cookie, load_uuid=use_uuid
-                    )
-                    is False
+                        self.load_uuid_and_cookie(
+                            load_cookie=use_cookie, load_uuid=use_uuid
+                        )
+                        is False
                 ):
                     if set_device is True:
                         self.set_device()
@@ -344,60 +349,28 @@ class API(object):
                 self.login_flow(True)
                 return True
 
-            elif (
-                self.last_json.get("error_type", "") == "checkpoint_challenge_required"
-            ):
-                # self.logger.info("Checkpoint challenge required...")
-                if ask_for_code is True:
-                    solved = self.solve_challenge()
-                    if solved:
-                        self.save_successful_login()
-                        self.login_flow(True)
-                        return True
-                    else:
-                        self.logger.error(
-                            "Failed to login, unable to solve the challenge"
-                        )
-                        self.save_failed_login()
-                        return False
-                else:
-                    return False
+            elif (self.last_json.get("error_type", "") == "checkpoint_challenge_required"):
+                self.logger.info("Checkpoint challenge required...")
+                self.raise_checkpoint_challenge_required()
             elif self.last_json.get("two_factor_required"):
-                if self.two_factor_auth():
-                    self.save_successful_login()
-                    self.login_flow(True)
-                    return True
-                else:
-                    self.logger.error("Failed to login with 2FA!")
-                    self.save_failed_login()
-                    return False
+                raise TwoFactorRequiredException("2FA Required", self.device_id,
+                                                 self.last_json["two_factor_info"]["two_factor_identifier"])
             else:
-                self.logger.error(
-                    "Failed to login go to instagram and change your password"
-                )
+                self.logger.error("Failed to login go to instagram and change your password")
                 self.save_failed_login()
                 delete_credentials(self.base_path)
                 return False
 
-    def two_factor_auth(self):
-        self.logger.info("Two-factor authentication required")
-        if not self.two_factor_code:
-            if not self.cli:
-                self.logger.error("2FA code is not provided in login for non-cli usage.")
-                return False
-            two_factor_code = input("Enter 2FA verification code: ")
-        else:
-            two_factor_code = self.two_factor_code
-        two_factor_id = self.last_json["two_factor_info"]["two_factor_identifier"]
-
+    def two_factor_auth(self, **kwargs):
+        self.logger.info("Two-factor authentication started")
         login = self.session.post(
             config.API_URL + "accounts/two_factor_login/",
             data={
-                "username": self.username,
-                "verification_code": two_factor_code,
-                "two_factor_identifier": two_factor_id,
-                "password": self.password,
-                "device_id": self.device_id,
+                "username": kwargs["username"],
+                "verification_code": kwargs["two_factor_code"],
+                "two_factor_identifier": kwargs["two_factor_identifier"],
+                "password": kwargs["password"],
+                "device_id": kwargs["device_id"],
                 "ig_sig_key_version": config.SIG_KEY_VERSION,
             },
             allow_redirects=True,
@@ -414,7 +387,11 @@ class API(object):
                             resp_json["status"], login.text
                         )
                     )
+                self.logger.error("Failed to login with 2FA!")
+                self.save_failed_login()
                 return False
+            self.save_successful_login()
+            self.login_flow(True)
             return True
         else:
             self.logger.error(
@@ -423,6 +400,8 @@ class API(object):
                     "{} error with message {} !"
                 ).format(login.status_code, login.text)
             )
+            self.logger.error("Failed to login with 2FA!")
+            self.save_failed_login()
             return False
 
     def save_successful_login(self):
@@ -440,7 +419,7 @@ class API(object):
     def set_last_json(self, last_json):
         self.last_json = last_json
 
-    def solve_challenge(self):
+    def raise_checkpoint_challenge_required(self):
         challenge_url = self.last_json["challenge"]["api_path"][1:]
         try:
             self.send_request(challenge_url, None, login=True, with_signature=False)
@@ -448,41 +427,36 @@ class API(object):
             self.logger.error("solve_challenge; {}".format(e))
             return False
 
-        choices = self.get_challenge_choices()
-        for choice in choices:
-            print(choice)
-        if not self.cli:
-            self.logger.error("Solving interactive challenge is not possible in non-cli mode.")
-            return False
-        code = input("Insert choice: ")
-
-        data = json.dumps({"choice": code})
+        data = json.dumps({"choice": 0})
         try:
             self.send_request(challenge_url, data, login=True)
         except Exception as e:
             self.logger.error(e)
             return False
 
-        print("A code has been sent to the method selected, please check.")
-        code = input("Insert code: ").replace(" ", "")
+        raise CheckpointChallengeRequiredException(message="CheckpointChallengeRequired", challenge_url=challenge_url)
 
-        data = json.dumps({"security_code": code})
+    def solve_challenge(self, **kwargs):
+        data = json.dumps({"security_code": kwargs["code"]})
         try:
-            self.send_request(challenge_url, data, login=True)
+            self.send_request(kwargs["challenge_url"], data, login=True)
         except Exception as e:
             self.logger.error(e)
             return False
 
         worked = (
-            ("logged_in_user" in self.last_json)
-            and (self.last_json.get("action", "") == "close")
-            and (self.last_json.get("status", "") == "ok")
+                ("logged_in_user" in self.last_json)
+                and (self.last_json.get("action", "") == "close")
+                and (self.last_json.get("status", "") == "ok")
         )
 
         if worked:
+            self.save_successful_login()
+            self.login_flow(True)
             return True
 
         self.logger.error("Not possible to log in. Reset and try again")
+        self.save_failed_login()
         return False
 
     def get_challenge_choices(self):
@@ -526,14 +500,14 @@ class API(object):
             self.session.proxies["https"] = scheme + self.proxy
 
     def send_request(
-        self,
-        endpoint,
-        post=None,
-        login=False,
-        with_signature=True,
-        headers=None,
-        extra_sig=None,
-        timeout_minutes=None,
+            self,
+            endpoint,
+            post=None,
+            login=False,
+            with_signature=True,
+            headers=None,
+            extra_sig=None,
+            timeout_minutes=None,
     ):
         self.set_proxy()  # Only happens if `self.proxy`
         # TODO: fix the request_headers
@@ -594,7 +568,7 @@ class API(object):
             try:
                 response_data = json.loads(response.text)
                 if response_data.get(
-                    "message"
+                        "message"
                 ) is not None and "feedback_required" in str(
                     response_data.get("message").encode("utf-8")
                 ):
@@ -661,7 +635,8 @@ class API(object):
                     except Exception:
                         self.logger.error("Error unknown send request 400 2FA")
                         pass
-                    return self.two_factor_auth()
+                    raise TwoFactorRequiredException("2FA Required", self.device_id,
+                                                     self.last_json["two_factor_info"]["two_factor_identifier"])
                 # End of Interactive Two-Factor Authentication
                 else:
                     msg = "Instagram's error message: {}"
@@ -728,7 +703,8 @@ class API(object):
 
     def batch_fetch(self):
         data = {
-            "surfaces_to_triggers": '{"4715":["instagram_feed_header"],"5858":["instagram_feed_tool_tip"],"5734":["instagram_feed_prompt"]}',  # noqa
+            "surfaces_to_triggers": '{"4715":["instagram_feed_header"],"5858":["instagram_feed_tool_tip"],"5734":["instagram_feed_prompt"]}',
+            # noqa
             "surfaces_to_queries": '{"4715":"Query+QuickPromotionSurfaceQuery:+Viewer+{viewer()+{eligible_promotions.trigger_context_v2(<trigger_context_v2>).ig_parameters(<ig_parameters>).trigger_name(<trigger_name>).surface_nux_id(<surface>).external_gating_permitted_qps(<external_gating_permitted_qps>).supports_client_filters(true).include_holdouts(true)+{edges+{client_ttl_seconds,log_eligibility_waterfall,is_holdout,priority,time_range+{start,end},node+{id,promotion_id,logging_data,max_impressions,triggers,contextual_filters+{clause_type,filters+{filter_type,unknown_action,value+{name,required,bool_value,int_value,string_value},extra_datas+{name,required,bool_value,int_value,string_value}},clauses+{clause_type,filters+{filter_type,unknown_action,value+{name,required,bool_value,int_value,string_value},extra_datas+{name,required,bool_value,int_value,string_value}},clauses+{clause_type,filters+{filter_type,unknown_action,value+{name,required,bool_value,int_value,string_value},extra_datas+{name,required,bool_value,int_value,string_value}},clauses+{clause_type,filters+{filter_type,unknown_action,value+{name,required,bool_value,int_value,string_value},extra_datas+{name,required,bool_value,int_value,string_value}}}}}},is_uncancelable,template+{name,parameters+{name,required,bool_value,string_value,color_value,}},creatives+{title+{text},content+{text},footer+{text},social_context+{text},social_context_images,primary_action{title+{text},url,limit,dismiss_promotion},secondary_action{title+{text},url,limit,dismiss_promotion},dismiss_action{title+{text},url,limit,dismiss_promotion},image.scale(<scale>)+{uri,width,height}}}}}}}","5858":"Query+QuickPromotionSurfaceQuery:+Viewer+{viewer()+{eligible_promotions.trigger_context_v2(<trigger_context_v2>).ig_parameters(<ig_parameters>).trigger_name(<trigger_name>).surface_nux_id(<surface>).external_gating_permitted_qps(<external_gating_permitted_qps>).supports_client_filters(true).include_holdouts(true)+{edges+{client_ttl_seconds,log_eligibility_waterfall,is_holdout,priority,time_range+{start,end},node+{id,promotion_id,logging_data,max_impressions,triggers,contextual_filters+{clause_type,filters+{filter_type,unknown_action,value+{name,required,bool_value,int_value,string_value},extra_datas+{name,required,bool_value,int_value,string_value}},clauses+{clause_type,filters+{filter_type,unknown_action,value+{name,required,bool_value,int_value,string_value},extra_datas+{name,required,bool_value,int_value,string_value}},clauses+{clause_type,filters+{filter_type,unknown_action,value+{name,required,bool_value,int_value,string_value},extra_datas+{name,required,bool_value,int_value,string_value}},clauses+{clause_type,filters+{filter_type,unknown_action,value+{name,required,bool_value,int_value,string_value},extra_datas+{name,required,bool_value,int_value,string_value}}}}}},is_uncancelable,template+{name,parameters+{name,required,bool_value,string_value,color_value,}},creatives+{title+{text},content+{text},footer+{text},social_context+{text},social_context_images,primary_action{title+{text},url,limit,dismiss_promotion},secondary_action{title+{text},url,limit,dismiss_promotion},dismiss_action{title+{text},url,limit,dismiss_promotion},image.scale(<scale>)+{uri,width,height}}}}}}}","5734":"Query+QuickPromotionSurfaceQuery:+Viewer+{viewer()+{eligible_promotions.trigger_context_v2(<trigger_context_v2>).ig_parameters(<ig_parameters>).trigger_name(<trigger_name>).surface_nux_id(<surface>).external_gating_permitted_qps(<external_gating_permitted_qps>).supports_client_filters(true).include_holdouts(true)+{edges+{client_ttl_seconds,log_eligibility_waterfall,is_holdout,priority,time_range+{start,end},node+{id,promotion_id,logging_data,max_impressions,triggers,contextual_filters+{clause_type,filters+{filter_type,unknown_action,value+{name,required,bool_value,int_value,string_value},extra_datas+{name,required,bool_value,int_value,string_value}},clauses+{clause_type,filters+{filter_type,unknown_action,value+{name,required,bool_value,int_value,string_value},extra_datas+{name,required,bool_value,int_value,string_value}},clauses+{clause_type,filters+{filter_type,unknown_action,value+{name,required,bool_value,int_value,string_value},extra_datas+{name,required,bool_value,int_value,string_value}},clauses+{clause_type,filters+{filter_type,unknown_action,value+{name,required,bool_value,int_value,string_value},extra_datas+{name,required,bool_value,int_value,string_value}}}}}},is_uncancelable,template+{name,parameters+{name,required,bool_value,string_value,color_value,}},creatives+{title+{text},content+{text},footer+{text},social_context+{text},social_context_images,primary_action{title+{text},url,limit,dismiss_promotion},secondary_action{title+{text},url,limit,dismiss_promotion},dismiss_action{title+{text},url,limit,dismiss_promotion},image.scale(<scale>)+{uri,width,height}}}}}}}"}',
             "vc_policy": "default",
             "_csrftoken": self.token,
@@ -794,15 +770,15 @@ class API(object):
 
     # ====== PHOTO METHODS ====== #
     def upload_photo(
-        self,
-        photo,
-        caption=None,
-        upload_id=None,
-        from_video=False,
-        force_resize=False,
-        options={},
-        user_tags=None,
-        is_sidecar=False
+            self,
+            photo,
+            caption=None,
+            upload_id=None,
+            from_video=False,
+            force_resize=False,
+            options={},
+            user_tags=None,
+            is_sidecar=False
     ):
         """Upload photo to Instagram
 
@@ -831,14 +807,14 @@ class API(object):
         )
 
     def upload_album(
-        self,
-        photos,
-        caption=None,
-        upload_id=None,
-        from_video=False,
-        force_resize=False,
-        options={},
-        user_tags=None
+            self,
+            photos,
+            caption=None,
+            upload_id=None,
+            from_video=False,
+            force_resize=False,
+            options={},
+            user_tags=None
     ):
         """Upload album to Instagram
 
@@ -880,7 +856,7 @@ class API(object):
 
     # ====== VIDEO METHODS ====== #
     def upload_video(
-        self, video, caption=None, upload_id=None, thumbnail=None, options={}
+            self, video, caption=None, upload_id=None, thumbnail=None, options={}
     ):
         """Upload video to Instagram
 
@@ -904,15 +880,15 @@ class API(object):
         return download_video(self, media_id, filename, media, folder)
 
     def configure_video(
-        self,
-        upload_id,
-        video,
-        thumbnail,
-        width,
-        height,
-        duration,
-        caption="",
-        options={},
+            self,
+            upload_id,
+            video,
+            thumbnail,
+            width,
+            height,
+            duration,
+            caption="",
+            options={},
     ):
         """Post Configure Video
         (send caption, thumbnail andmore else to Instagram)
@@ -1052,17 +1028,17 @@ class API(object):
     # "is_carousel_bumped_post":"false", "container_module":"feed_timeline",
     # "feed_position":"0" # noqa
     def like(
-        self,
-        media_id,
-        double_tap=None,
-        container_module="feed_short_url",
-        feed_position=0,
-        username=None,
-        user_id=None,
-        hashtag_name=None,
-        hashtag_id=None,
-        entity_page_name=None,
-        entity_page_id=None,
+            self,
+            media_id,
+            double_tap=None,
+            container_module="feed_short_url",
+            feed_position=0,
+            username=None,
+            user_id=None,
+            hashtag_name=None,
+            hashtag_id=None,
+            entity_page_name=None,
+            entity_page_id=None,
     ):
         data = self.action_data(
             {
@@ -1385,11 +1361,11 @@ class API(object):
     @staticmethod
     def generate_signature(data):
         body = (
-            hmac.new(
-                config.IG_SIG_KEY.encode("utf-8"), data.encode("utf-8"), hashlib.sha256
-            ).hexdigest()
-            + "."
-            + urllib.parse.quote(data)
+                hmac.new(
+                    config.IG_SIG_KEY.encode("utf-8"), data.encode("utf-8"), hashlib.sha256
+                ).hexdigest()
+                + "."
+                + urllib.parse.quote(data)
         )
         signature = "signed_body={body}&ig_sig_key_version={sig_key}"
         return signature.format(sig_key=config.SIG_KEY_VERSION, body=body)
@@ -1416,16 +1392,16 @@ class API(object):
             return generated_uuid.replace("-", "")
 
     def get_total_followers_or_followings(  # noqa: C901
-        self,
-        user_id,
-        amount=None,
-        which="followers",
-        filter_private=False,
-        filter_business=False,
-        filter_verified=False,
-        usernames=False,
-        to_file=None,
-        overwrite=False,
+            self,
+            user_id,
+            amount=None,
+            which="followers",
+            filter_private=False,
+            filter_business=False,
+            filter_verified=False,
+            usernames=False,
+            to_file=None,
+            overwrite=False,
     ):
         from io import StringIO
 
@@ -1662,7 +1638,7 @@ class API(object):
         return self.send_request(url)
 
     def get_reels_tray_feed(
-        self, reason=None
+            self, reason=None
     ):  # reason can be = cold_start or pull_to_refresh
         data = {
             "supported_capabilities_new": config.SUPPORTED_CAPABILITIES,
@@ -1733,7 +1709,7 @@ class API(object):
         story_seen = {}
         now = int(time.time())
         for i, story in enumerate(
-            sorted(reels, key=lambda m: m["taken_at"], reverse=True)
+                sorted(reels, key=lambda m: m["taken_at"], reverse=True)
         ):
             story_seen_at = now - min(
                 i + 1 + random.randint(0, 2), max(0, now - story["taken_at"])
@@ -1928,13 +1904,13 @@ class API(object):
 
     def facebook_ota(self):
         url = (
-            "facebook_ota/?fields=update{download_uri,download_uri_delta_base,version_code_delta_base,download_uri_delta,fallback_to_full_update,file_size_delta,version_code,published_date,file_size,ota_bundle_type,resources_checksum,allowed_networks,release_id}&custom_user_id=3149016955&"
-            + self.generate_signature(config.SIG_KEY_VERSION)
-            + "&version_code=200396023&version_name="
-            + config.APP_VERSION
-            + "&custom_app_id=124024574287414&custom_device_id="
-            + self.phone_id
-            + ""
+                "facebook_ota/?fields=update{download_uri,download_uri_delta_base,version_code_delta_base,download_uri_delta,fallback_to_full_update,file_size_delta,version_code,published_date,file_size,ota_bundle_type,resources_checksum,allowed_networks,release_id}&custom_user_id=3149016955&"
+                + self.generate_signature(config.SIG_KEY_VERSION)
+                + "&version_code=200396023&version_name="
+                + config.APP_VERSION
+                + "&custom_app_id=124024574287414&custom_device_id="
+                + self.phone_id
+                + ""
         )
         return self.send_request(url)
 
