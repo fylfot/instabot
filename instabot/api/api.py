@@ -220,8 +220,8 @@ class API(object):
     def get_uuid_and_cookie_data(self):
         return get_uuid_and_cookie_data(self)
 
-    def load_uuid_and_cookie_with_data(self, load_uuid=True, load_cookie=True):
-        return load_uuid_and_cookie_with_data(self, load_uuid, load_cookie)
+    def load_uuid_and_cookie_with_data(self, data, load_uuid=True, load_cookie=True):
+        return load_uuid_and_cookie_with_data(self, data, load_uuid, load_cookie)
 
     def encrypt_password(self, password):
         IG_LOGIN_ANDROID_PUBLIC_KEY = "LS0tLS1CRUdJTiBQVUJMSUMgS0VZLS0tLS0KTUlJQklqQU5CZ2txaGtpRzl3MEJBUUVGQUFPQ0FROEFNSUlCQ2dLQ0FRRUF1enRZOEZvUlRGRU9mK1RkTGlUdAplN3FIQXY1cmdBMmk5RkQ0YjgzZk1GK3hheW14b0xSdU5KTitRanJ3dnBuSm1LQ0QxNGd3K2w3TGQ0RHkvRHVFCkRiZlpKcmRRWkJIT3drS3RqdDdkNWlhZFdOSjdLczlBM0NNbzB5UktyZFBGU1dsS21lQVJsTlFrVXF0YkNmTzcKT2phY3ZYV2dJcGlqTkdJRVk4UkdzRWJWZmdxSmsrZzhuQWZiT0xjNmEwbTMxckJWZUJ6Z0hkYWExeFNKOGJHcQplbG4zbWh4WDU2cmpTOG5LZGk4MzRZSlNaV3VxUHZmWWUrbEV6Nk5laU1FMEo3dE80eWxmeWlPQ05ycnF3SnJnCjBXWTFEeDd4MHlZajdrN1NkUWVLVUVaZ3FjNUFuVitjNUQ2SjJTSTlGMnNoZWxGNWVvZjJOYkl2TmFNakpSRDgKb1FJREFRQUIKLS0tLS1FTkQgUFVCTElDIEtFWS0tLS0tCg=="
@@ -269,6 +269,7 @@ class API(object):
             use_cookie=True,
             use_uuid=True,
             cookie_fname=None,
+            cookie=None,
             set_device=True,
             generate_all_uuids=True,
             is_threaded=False
@@ -298,19 +299,27 @@ class API(object):
         msg = "Login flow failed, the cookie is broken. Relogin again."
 
         if use_cookie is True:
-            # try:
-            if (
-                    self.load_uuid_and_cookie(load_cookie=use_cookie, load_uuid=use_uuid)
-                    is True
-            ):
-                # Check if the token loaded is valid.
-                if self.login_flow(False) is True:
-                    cookie_is_loaded = True
-                    self.save_successful_login()
-                else:
-                    self.logger.info(msg)
-                    set_device = generate_all_uuids = False
-                    force = True
+            if cookie is not None:
+                if self.load_uuid_and_cookie_with_data(cookie):
+                    # Check if the token loaded is valid.
+                    if self.login_flow(False) is True:
+                        cookie_is_loaded = True
+                        self.save_successful_login()
+                    else:
+                        self.logger.info(msg)
+                        set_device = generate_all_uuids = False
+                        force = True
+            else:
+                # try:
+                if self.load_uuid_and_cookie(load_cookie=use_cookie, load_uuid=use_uuid):
+                    # Check if the token loaded is valid.
+                    if self.login_flow(False) is True:
+                        cookie_is_loaded = True
+                        self.save_successful_login()
+                    else:
+                        self.logger.info(msg)
+                        set_device = generate_all_uuids = False
+                        force = True
 
         if not cookie_is_loaded and (not self.is_logged_in or force):
             self.session = requests.Session()

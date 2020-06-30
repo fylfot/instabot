@@ -335,12 +335,22 @@ def load_uuid_and_cookie(self, load_uuid=True, load_cookie=True):
 
     with open(self.cookie_fname, "r") as f:
         data = json.load(f)
-        load_uuid_and_cookie_with_data(self, data, load_uuid, load_cookie)
+        set_cookie_and_uuid(self, data, load_uuid, load_cookie)
     self.is_logged_in = True
     return True
 
 
 def load_uuid_and_cookie_with_data(self, data, load_uuid=True, load_cookie=True):
+    try:
+        set_cookie_and_uuid(self, data, load_uuid, load_cookie)
+        self.is_logged_in = True
+        return True
+    except Exception as e:
+        self.logger.error("Error in load_uuid_and_cookie_with_data message:%s", str(e))
+        return False
+
+
+def set_cookie_and_uuid(self, data, load_uuid=True, load_cookie=True):
     if "cookie" in data:
         self.last_login = data["timing_value"]["last_login"]
         self.last_experiments = data["timing_value"]["last_experiments"]
