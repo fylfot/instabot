@@ -402,7 +402,7 @@ class API(object):
                 return False
             elif resp_json["status"] == "fail":
                 if resp_json["message"] == "challenge_required":
-                    raise CheckpointChallengeRequiredException("")
+                    raise CheckpointChallengeRequiredException("Challenge Required", "")
             self.save_successful_login()
             self.login_flow(True)
             return True
