@@ -400,6 +400,9 @@ class API(object):
                 self.logger.error("Failed to login with 2FA!")
                 self.save_failed_login()
                 return False
+            elif resp_json["status"] == "fail":
+                if resp_json["message"] == "challenge_required":
+                    raise CheckpointChallengeRequiredException()
             self.save_successful_login()
             self.login_flow(True)
             return True
