@@ -360,9 +360,6 @@ def set_cookie_and_uuid(self, data, load_uuid=True, load_cookie=True):
             self.session.cookies = requests.utils.cookiejar_from_dict(
                 data["cookie"]
             )
-            cookie_username = self.cookie_dict["ds_user"]
-            assert cookie_username == self.username.lower()
-            self.cookie_dict["urlgen"]
 
         if load_uuid:
             self.logger.debug("Loading uuids")
@@ -401,8 +398,6 @@ def set_cookie_and_uuid(self, data, load_uuid=True, load_cookie=True):
         self.session.cookies = requests.utils.cookiejar_from_dict(data)
         self.last_login = time.time()
         self.last_experiments = time.time()
-        cookie_username = self.cookie_dict["ds_user"]
-        assert cookie_username == self.username
         self.set_device()
         self.generate_all_uuids()
 

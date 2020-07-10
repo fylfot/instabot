@@ -372,6 +372,7 @@ class API(object):
 
     def two_factor_auth(self, **kwargs):
         self.logger.info("Two-factor authentication started")
+        self.set_user(kwargs["username"], kwargs["password"], set_device=False, generate_all_uuids=False)
         login = self.session.post(
             config.API_URL + "accounts/two_factor_login/",
             data={
@@ -428,6 +429,9 @@ class API(object):
     def set_last_json(self, last_json):
         self.last_json = last_json
 
+    def set_request_session(self, session):
+        self.session = session
+
     def raise_checkpoint_challenge_required(self):
         challenge_url = self.last_json["challenge"]["api_path"][1:]
         try:
@@ -448,7 +452,7 @@ class API(object):
     def solve_challenge(self, **kwargs):
         data = json.dumps({"security_code": kwargs["code"]})
         try:
-            self.send_request(kwargs["challenge_url"], data, login=True)
+            self.send_request(kwargs["challenge_url"], data, login=True, headers=kwargs["headers"])
         except Exception as e:
             self.logger.error(e)
             return False
@@ -507,6 +511,9 @@ class API(object):
             scheme = "http://" if not parsed.scheme else ""
             self.session.proxies["http"] = scheme + self.proxy
             self.session.proxies["https"] = scheme + self.proxy
+
+    def set_proxy_attr(self, proxy):
+        self.proxy = proxy
 
     def send_request(
             self,
