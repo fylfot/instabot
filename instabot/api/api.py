@@ -43,6 +43,7 @@ from .api_login import (
     creatives_ar_class,
     set_contact_point_prefill,
 )
+from ..bot.bot_filter import filter_medias
 from .api_photo import configure_photo, download_photo, upload_photo, upload_album
 from .api_story import configure_story, download_story, upload_story_photo
 from .api_video import configure_video, download_video, upload_video
@@ -1511,13 +1512,20 @@ class API(object):
     def get_total_followings(self, user_id, amount=None):
         return self.get_total_followers_or_followings(user_id, amount, "followings")
 
-    def get_total_user_feed(self, user_id, min_timestamp=None):
+    def get_total_user_feed(self, user_id, min_timestamp=None, statics=False):
         return self.get_last_user_feed(
-            user_id, amount=float("inf"), min_timestamp=min_timestamp
+            user_id, amount=float("inf"), min_timestamp=min_timestamp, statics=statics
         )
 
-    def get_last_user_feed(self, user_id, amount, min_timestamp=None):
+    def get_last_user_feed(self, user_id, amount, min_timestamp=None, statics=False):
         user_feed = []
+        stats = {
+            "comments": 0,
+            "likes": 0,
+            "medias": 0
+        }
+        total_comments = 0
+        total_likes = 0
         next_max_id = ""
         while True:
             if len(user_feed) >= float(amount):
@@ -1526,10 +1534,17 @@ class API(object):
             self.get_user_feed(user_id, next_max_id, min_timestamp)
             last_json = self.last_json
             if "items" not in last_json:
-                return user_feed
+                return user_feed if not statics else stats
+            for item in last_json["items"]:
+                total_likes = total_likes + item["like_count"]
+                total_comments = total_comments + item["comment_count"]
+
             user_feed += last_json["items"]
             if not last_json.get("more_available"):
-                return user_feed
+                stats["comments"] = total_comments
+                stats["likes"] = total_likes
+                stats["medias"] = len(user_feed)
+                return user_feed if not statics else stats
             next_max_id = last_json.get("next_max_id", "")
 
     def get_total_hashtag_feed(self, hashtag_str, amount=100):
@@ -1552,8 +1567,8 @@ class API(object):
                     return hashtag_feed[:amount]
                 next_max_id = last_json.get("next_max_id", "")
 
-    def get_total_self_user_feed(self, min_timestamp=None):
-        return self.get_total_user_feed(self.user_id, min_timestamp)
+    def get_total_self_user_feed(self, min_timestamp=None, statics=False):
+        return self.get_total_user_feed(self.user_id, min_timestamp, statics=statics)
 
     def get_total_self_followers(self):
         return self.get_total_followers(self.user_id)
@@ -2131,3 +2146,14 @@ class API(object):
         for char in code:
             result = result * 64 + alphabet[char]
         return result
+
+    def filter_medias(
+        self, media_items, filtration=True, quiet=False, is_comment=False
+    ):
+        return filter_medias(self, media_items, filtration, quiet, is_comment)
+
+    def get_your_medias(self, as_dict=False):
+        self.get_self_user_feed()
+        if as_dict:
+            return self.last_json.get("items")
+        return self.filter_medias(self.last_json.get("items"), False)
