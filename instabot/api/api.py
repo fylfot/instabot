@@ -356,7 +356,7 @@ class API(object):
 
             if self.send_request("accounts/login/", data, True):
                 self.save_successful_login()
-                self.login_flow(True)
+                # self.login_flow(True)
                 return True
 
             elif (self.last_json.get("error_type", "") == "checkpoint_challenge_required"):
@@ -405,7 +405,7 @@ class API(object):
                 if resp_json["message"] == "challenge_required":
                     raise CheckpointChallengeRequiredException("Challenge Required", "")
             self.save_successful_login()
-            self.login_flow(True)
+            # self.login_flow(True)
             return True
         else:
             self.logger.error(
@@ -469,7 +469,7 @@ class API(object):
 
         if worked:
             self.save_successful_login()
-            self.login_flow(True)
+            # self.login_flow(True)
             return True
 
         self.logger.error("Not possible to log in. Reset and try again")
