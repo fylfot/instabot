@@ -9,6 +9,7 @@ import requests.utils
 
 from . import config, devices
 
+
 # ====== SYNC METHODS ====== #
 
 
@@ -283,7 +284,7 @@ def login_flow(self, just_logged_in=False, app_refresh_interval=1800):
             )
             return False
 
-    self.save_uuid_and_cookie()
+    #self.save_uuid_and_cookie()
     return False if False in check_flow else True
 
 
@@ -334,63 +335,71 @@ def load_uuid_and_cookie(self, load_uuid=True, load_cookie=True):
 
     with open(self.cookie_fname, "r") as f:
         data = json.load(f)
-        if "cookie" in data:
-            self.last_login = data["timing_value"]["last_login"]
-            self.last_experiments = data["timing_value"]["last_experiments"]
-
-            if load_cookie:
-                self.logger.debug("Loading cookies")
-                self.session.cookies = requests.utils.cookiejar_from_dict(
-                    data["cookie"]
-                )
-                cookie_username = self.cookie_dict["ds_user"]
-                assert cookie_username == self.username.lower()
-                self.cookie_dict["urlgen"]
-
-            if load_uuid:
-                self.logger.debug("Loading uuids")
-                self.phone_id = data["uuids"]["phone_id"]
-                self.uuid = data["uuids"]["uuid"]
-                self.client_session_id = data["uuids"]["client_session_id"]
-                self.advertising_id = data["uuids"]["advertising_id"]
-                self.device_id = data["uuids"]["device_id"]
-
-                self.device_settings = data["device_settings"]
-                self.user_agent = data["user_agent"]
-
-            msg = (
-                "Recovery from {}: COOKIE {} - UUIDs {} - TIMING, DEVICE "
-                "and ...\n- user-agent={}\n- phone_id={}\n- uuid={}\n- "
-                "client_session_id={}\n- device_id={}"
-            )
-
-            self.logger.info(
-                msg.format(
-                    self.cookie_fname,
-                    load_cookie,
-                    load_uuid,
-                    self.user_agent,
-                    self.phone_id,
-                    self.uuid,
-                    self.client_session_id,
-                    self.device_id,
-                )
-            )
-        else:
-            self.logger.info(
-                "The cookie seems to be the with the older structure. "
-                "Load and init again all uuids"
-            )
-            self.session.cookies = requests.utils.cookiejar_from_dict(data)
-            self.last_login = time.time()
-            self.last_experiments = time.time()
-            cookie_username = self.cookie_dict["ds_user"]
-            assert cookie_username == self.username
-            self.set_device()
-            self.generate_all_uuids()
-
+        set_cookie_and_uuid(self, data, load_uuid, load_cookie)
     self.is_logged_in = True
     return True
+
+
+def load_uuid_and_cookie_with_data(self, data, load_uuid=True, load_cookie=True):
+    try:
+        set_cookie_and_uuid(self, data, load_uuid, load_cookie)
+        self.is_logged_in = True
+        return True
+    except Exception as e:
+        self.logger.error("Error in load_uuid_and_cookie_with_data message:%s", str(e))
+        return False
+
+
+def set_cookie_and_uuid(self, data, load_uuid=True, load_cookie=True):
+    if "cookie" in data:
+        self.last_login = data["timing_value"]["last_login"]
+        self.last_experiments = data["timing_value"]["last_experiments"]
+
+        if load_cookie:
+            self.logger.debug("Loading cookies")
+            self.session.cookies = requests.utils.cookiejar_from_dict(
+                data["cookie"]
+            )
+
+        if load_uuid:
+            self.logger.debug("Loading uuids")
+            self.phone_id = data["uuids"]["phone_id"]
+            self.uuid = data["uuids"]["uuid"]
+            self.client_session_id = data["uuids"]["client_session_id"]
+            self.advertising_id = data["uuids"]["advertising_id"]
+            self.device_id = data["uuids"]["device_id"]
+
+            self.device_settings = data["device_settings"]
+            self.user_agent = data["user_agent"]
+
+        msg = (
+            "Recovery from {}: COOKIE {} - UUIDs {} - TIMING, DEVICE "
+            "and ...\n- user-agent={}\n- phone_id={}\n- uuid={}\n- "
+            "client_session_id={}\n- device_id={}"
+        )
+
+        self.logger.info(
+            msg.format(
+                self.cookie_fname,
+                load_cookie,
+                load_uuid,
+                self.user_agent,
+                self.phone_id,
+                self.uuid,
+                self.client_session_id,
+                self.device_id,
+            )
+        )
+    else:
+        self.logger.info(
+            "The cookie seems to be the with the older structure. "
+            "Load and init again all uuids"
+        )
+        self.session.cookies = requests.utils.cookiejar_from_dict(data)
+        self.last_login = time.time()
+        self.last_experiments = time.time()
+        self.set_device()
+        self.generate_all_uuids()
 
 
 def save_uuid_and_cookie(self):
@@ -398,7 +407,12 @@ def save_uuid_and_cookie(self):
         fname = "{}_uuid_and_cookie.json".format(self.username)
         self.cookie_fname = os.path.join(self.base_path, fname)
 
-    data = {
+    with open(self.cookie_fname, "w") as f:
+        json.dump(get_uuid_and_cookie_data(self), f)
+
+
+def get_uuid_and_cookie_data(self):
+    return {
         "uuids": {
             "phone_id": self.phone_id,
             "uuid": self.uuid,
@@ -414,5 +428,3 @@ def save_uuid_and_cookie(self):
         "device_settings": self.device_settings,
         "user_agent": self.user_agent,
     }
-    with open(self.cookie_fname, "w") as f:
-        json.dump(data, f)

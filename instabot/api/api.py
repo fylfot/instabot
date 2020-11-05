@@ -26,10 +26,12 @@ from .api_login import (
     change_device_simulation,
     generate_all_uuids,
     load_uuid_and_cookie,
+    load_uuid_and_cookie_with_data,
     login_flow,
     pre_login_flow,
     reinstall_app_simulation,
     save_uuid_and_cookie,
+    get_uuid_and_cookie_data,
     set_device,
     sync_launcher,
     get_prefill_candidates,
@@ -41,23 +43,22 @@ from .api_login import (
     creatives_ar_class,
     set_contact_point_prefill,
 )
+from ..bot.bot_filter import filter_medias
 from .api_photo import configure_photo, download_photo, upload_photo, upload_album
 from .api_story import configure_story, download_story, upload_story_photo
 from .api_video import configure_video, download_video, upload_video
+from .instagram_exceptions import TwoFactorRequiredException, CheckpointChallengeRequiredException
 from .prepare import delete_credentials, get_credentials
-
 
 try:
     from json.decoder import JSONDecodeError
 except ImportError:
     JSONDecodeError = ValueError
 
-
 version_info = sys.version_info[0:3]
 is_py2 = version_info[0] == 2
 is_py3 = version_info[0] == 3
 is_py37 = version_info[:2] == (3, 7)
-
 
 version = "0.117.0"
 current_path = os.path.abspath(os.getcwd())
@@ -65,14 +66,14 @@ current_path = os.path.abspath(os.getcwd())
 
 class API(object):
     def __init__(
-        self,
-        device=None,
-        base_path=current_path + "/config/",
-        save_logfile=True,
-        log_filename=None,
-        loglevel_file=logging.DEBUG,
-        loglevel_stream=logging.INFO,
-        cli=True
+            self,
+            device=None,
+            base_path=current_path + "/config/",
+            save_logfile=True,
+            log_filename=None,
+            loglevel_file=logging.DEBUG,
+            loglevel_stream=logging.INFO,
+            cli=True
     ):
         # Setup device and user_agent
         self.device = device or devices.DEFAULT_DEVICE
@@ -217,6 +218,12 @@ class API(object):
     def save_uuid_and_cookie(self):
         return save_uuid_and_cookie(self)
 
+    def get_uuid_and_cookie_data(self):
+        return get_uuid_and_cookie_data(self)
+
+    def load_uuid_and_cookie_with_data(self, data, load_uuid=True, load_cookie=True):
+        return load_uuid_and_cookie_with_data(self, data, load_uuid, load_cookie)
+
     def encrypt_password(self, password):
         IG_LOGIN_ANDROID_PUBLIC_KEY = "LS0tLS1CRUdJTiBQVUJMSUMgS0VZLS0tLS0KTUlJQklqQU5CZ2txaGtpRzl3MEJBUUVGQUFPQ0FROEFNSUlCQ2dLQ0FRRUF1enRZOEZvUlRGRU9mK1RkTGlUdAplN3FIQXY1cmdBMmk5RkQ0YjgzZk1GK3hheW14b0xSdU5KTitRanJ3dnBuSm1LQ0QxNGd3K2w3TGQ0RHkvRHVFCkRiZlpKcmRRWkJIT3drS3RqdDdkNWlhZFdOSjdLczlBM0NNbzB5UktyZFBGU1dsS21lQVJsTlFrVXF0YkNmTzcKT2phY3ZYV2dJcGlqTkdJRVk4UkdzRWJWZmdxSmsrZzhuQWZiT0xjNmEwbTMxckJWZUJ6Z0hkYWExeFNKOGJHcQplbG4zbWh4WDU2cmpTOG5LZGk4MzRZSlNaV3VxUHZmWWUrbEV6Nk5laU1FMEo3dE80eWxmeWlPQ05ycnF3SnJnCjBXWTFEeDd4MHlZajdrN1NkUWVLVUVaZ3FjNUFuVitjNUQ2SjJTSTlGMnNoZWxGNWVvZjJOYkl2TmFNakpSRDgKb1FJREFRQUIKLS0tLS1FTkQgUFVCTElDIEtFWS0tLS0tCg=="
         IG_LOGIN_ANDROID_PUBLIC_KEY_ID = 205
@@ -238,13 +245,13 @@ class API(object):
         encrypted_password, tag = cipher.encrypt_and_digest(password.encode())
 
         payload = (
-            b"\x01"
-            + str(IG_LOGIN_ANDROID_PUBLIC_KEY_ID).encode()
-            + iv
-            + b"0001"
-            + encrypted_aes_key
-            + tag
-            + encrypted_password
+                b"\x01"
+                + str(IG_LOGIN_ANDROID_PUBLIC_KEY_ID).encode()
+                + iv
+                + b"0001"
+                + encrypted_aes_key
+                + tag
+                + encrypted_password
         )
 
         base64_encoded_payload = base64.b64encode(payload)
@@ -255,18 +262,18 @@ class API(object):
         self.two_factor_code = code
 
     def login(
-        self,
-        username=None,
-        password=None,
-        force=False,
-        proxy=None,
-        use_cookie=True,
-        use_uuid=True,
-        cookie_fname=None,
-        ask_for_code=False,
-        set_device=True,
-        generate_all_uuids=True,
-        is_threaded=False
+            self,
+            username=None,
+            password=None,
+            force=False,
+            proxy=None,
+            use_cookie=True,
+            use_uuid=True,
+            cookie_fname=None,
+            cookie=None,
+            set_device=True,
+            generate_all_uuids=True,
+            is_threaded=False
     ):
         if password is None:
             if not self.cli:
@@ -293,28 +300,36 @@ class API(object):
         msg = "Login flow failed, the cookie is broken. Relogin again."
 
         if use_cookie is True:
-            # try:
-            if (
-                self.load_uuid_and_cookie(load_cookie=use_cookie, load_uuid=use_uuid)
-                is True
-            ):
-                # Check if the token loaded is valid.
-                if self.login_flow(False) is True:
-                    cookie_is_loaded = True
-                    self.save_successful_login()
-                else:
-                    self.logger.info(msg)
-                    set_device = generate_all_uuids = False
-                    force = True
+            if cookie is not None:
+                if self.load_uuid_and_cookie_with_data(cookie):
+                    # Check if the token loaded is valid.
+                    if self.login_flow(False) is True:
+                        cookie_is_loaded = True
+                        self.save_successful_login()
+                    else:
+                        self.logger.info(msg)
+                        set_device = generate_all_uuids = False
+                        force = True
+            else:
+                # try:
+                if self.load_uuid_and_cookie(load_cookie=use_cookie, load_uuid=use_uuid):
+                    # Check if the token loaded is valid.
+                    if self.login_flow(False) is True:
+                        cookie_is_loaded = True
+                        self.save_successful_login()
+                    else:
+                        self.logger.info(msg)
+                        set_device = generate_all_uuids = False
+                        force = True
 
         if not cookie_is_loaded and (not self.is_logged_in or force):
             self.session = requests.Session()
             if use_uuid is True:
                 if (
-                    self.load_uuid_and_cookie(
-                        load_cookie=use_cookie, load_uuid=use_uuid
-                    )
-                    is False
+                        self.load_uuid_and_cookie(
+                            load_cookie=use_cookie, load_uuid=use_uuid
+                        )
+                        is False
                 ):
                     if set_device is True:
                         self.set_device()
@@ -341,63 +356,32 @@ class API(object):
 
             if self.send_request("accounts/login/", data, True):
                 self.save_successful_login()
-                self.login_flow(True)
+                # self.login_flow(True)
                 return True
 
-            elif (
-                self.last_json.get("error_type", "") == "checkpoint_challenge_required"
-            ):
-                # self.logger.info("Checkpoint challenge required...")
-                if ask_for_code is True:
-                    solved = self.solve_challenge()
-                    if solved:
-                        self.save_successful_login()
-                        self.login_flow(True)
-                        return True
-                    else:
-                        self.logger.error(
-                            "Failed to login, unable to solve the challenge"
-                        )
-                        self.save_failed_login()
-                        return False
-                else:
-                    return False
+            elif (self.last_json.get("error_type", "") == "checkpoint_challenge_required"):
+                self.logger.info("Checkpoint challenge required...")
+                self.raise_checkpoint_challenge_required()
             elif self.last_json.get("two_factor_required"):
-                if self.two_factor_auth():
-                    self.save_successful_login()
-                    self.login_flow(True)
-                    return True
-                else:
-                    self.logger.error("Failed to login with 2FA!")
-                    self.save_failed_login()
-                    return False
+                raise TwoFactorRequiredException("2FA Required", self.device_id,
+                                                 self.last_json["two_factor_info"]["two_factor_identifier"])
             else:
-                self.logger.error(
-                    "Failed to login go to instagram and change your password"
-                )
+                self.logger.error("Failed to login go to instagram and change your password")
                 self.save_failed_login()
                 delete_credentials(self.base_path)
                 return False
 
-    def two_factor_auth(self):
-        self.logger.info("Two-factor authentication required")
-        if not self.two_factor_code:
-            if not self.cli:
-                self.logger.error("2FA code is not provided in login for non-cli usage.")
-                return False
-            two_factor_code = input("Enter 2FA verification code: ")
-        else:
-            two_factor_code = self.two_factor_code
-        two_factor_id = self.last_json["two_factor_info"]["two_factor_identifier"]
-
+    def two_factor_auth(self, **kwargs):
+        self.logger.info("Two-factor authentication started")
+        self.set_user(kwargs["username"], kwargs["password"], set_device=False, generate_all_uuids=False)
         login = self.session.post(
             config.API_URL + "accounts/two_factor_login/",
             data={
-                "username": self.username,
-                "verification_code": two_factor_code,
-                "two_factor_identifier": two_factor_id,
-                "password": self.password,
-                "device_id": self.device_id,
+                "username": kwargs["username"],
+                "verification_code": kwargs["two_factor_code"],
+                "two_factor_identifier": kwargs["two_factor_identifier"],
+                "password": kwargs["password"],
+                "device_id": kwargs["device_id"],
                 "ig_sig_key_version": config.SIG_KEY_VERSION,
             },
             allow_redirects=True,
@@ -414,7 +398,14 @@ class API(object):
                             resp_json["status"], login.text
                         )
                     )
+                self.logger.error("Failed to login with 2FA!")
+                self.save_failed_login()
                 return False
+            elif resp_json["status"] == "fail":
+                if resp_json["message"] == "challenge_required":
+                    raise CheckpointChallengeRequiredException("Challenge Required", "")
+            self.save_successful_login()
+            # self.login_flow(True)
             return True
         else:
             self.logger.error(
@@ -423,6 +414,8 @@ class API(object):
                     "{} error with message {} !"
                 ).format(login.status_code, login.text)
             )
+            self.logger.error("Failed to login with 2FA!")
+            self.save_failed_login()
             return False
 
     def save_successful_login(self):
@@ -440,7 +433,10 @@ class API(object):
     def set_last_json(self, last_json):
         self.last_json = last_json
 
-    def solve_challenge(self):
+    def set_request_session(self, session):
+        self.session = session
+
+    def raise_checkpoint_challenge_required(self):
         challenge_url = self.last_json["challenge"]["api_path"][1:]
         try:
             self.send_request(challenge_url, None, login=True, with_signature=False)
@@ -448,40 +444,35 @@ class API(object):
             self.logger.error("solve_challenge; {}".format(e))
             return False
 
-        choices = self.get_challenge_choices()
-        for choice in choices:
-            print(choice)
-        if not self.cli:
-            self.logger.error("Solving interactive challenge is not possible in non-cli mode.")
-            return False
-        code = input("Insert choice: ")
-
-        data = json.dumps({"choice": code})
+        data = json.dumps({"choice": 0})
         try:
             self.send_request(challenge_url, data, login=True)
         except Exception as e:
             self.logger.error(e)
             return False
 
-        print("A code has been sent to the method selected, please check.")
-        code = input("Insert code: ").replace(" ", "")
+        raise CheckpointChallengeRequiredException(message="CheckpointChallengeRequired", challenge_url=challenge_url)
 
-        data = json.dumps({"security_code": code})
+    def solve_challenge(self, **kwargs):
+        data = json.dumps({"security_code": kwargs["code"]})
         try:
-            self.send_request(challenge_url, data, login=True)
+            self.send_request(kwargs["challenge_url"], data, login=True, headers=kwargs["headers"])
         except Exception as e:
             self.logger.error(e)
             return False
 
         worked = (
-            (self.last_json.get("action", "") == "close")
-            and (self.last_json.get("status", "") == "ok")
+                (self.last_json.get("action", "") == "close")
+                and (self.last_json.get("status", "") == "ok")
         )
 
         if worked:
+            self.save_successful_login()
+            # self.login_flow(True)
             return True
 
         self.logger.error("Not possible to log in. Reset and try again")
+        self.save_failed_login()
         return False
 
     def get_challenge_choices(self):
@@ -524,15 +515,18 @@ class API(object):
             self.session.proxies["http"] = scheme + self.proxy
             self.session.proxies["https"] = scheme + self.proxy
 
+    def set_proxy_attr(self, proxy):
+        self.proxy = proxy
+
     def send_request(
-        self,
-        endpoint,
-        post=None,
-        login=False,
-        with_signature=True,
-        headers=None,
-        extra_sig=None,
-        timeout_minutes=None,
+            self,
+            endpoint,
+            post=None,
+            login=False,
+            with_signature=True,
+            headers=None,
+            extra_sig=None,
+            timeout_minutes=None,
     ):
         self.set_proxy()  # Only happens if `self.proxy`
         # TODO: fix the request_headers
@@ -593,7 +587,7 @@ class API(object):
             try:
                 response_data = json.loads(response.text)
                 if response_data.get(
-                    "message"
+                        "message"
                 ) is not None and "feedback_required" in str(
                     response_data.get("message").encode("utf-8")
                 ):
@@ -660,7 +654,8 @@ class API(object):
                     except Exception:
                         self.logger.error("Error unknown send request 400 2FA")
                         pass
-                    return self.two_factor_auth()
+                    raise TwoFactorRequiredException("2FA Required", self.device_id,
+                                                     self.last_json["two_factor_info"]["two_factor_identifier"])
                 # End of Interactive Two-Factor Authentication
                 else:
                     msg = "Instagram's error message: {}"
@@ -727,7 +722,8 @@ class API(object):
 
     def batch_fetch(self):
         data = {
-            "surfaces_to_triggers": '{"4715":["instagram_feed_header"],"5858":["instagram_feed_tool_tip"],"5734":["instagram_feed_prompt"]}',  # noqa
+            "surfaces_to_triggers": '{"4715":["instagram_feed_header"],"5858":["instagram_feed_tool_tip"],"5734":["instagram_feed_prompt"]}',
+            # noqa
             "surfaces_to_queries": '{"4715":"Query+QuickPromotionSurfaceQuery:+Viewer+{viewer()+{eligible_promotions.trigger_context_v2(<trigger_context_v2>).ig_parameters(<ig_parameters>).trigger_name(<trigger_name>).surface_nux_id(<surface>).external_gating_permitted_qps(<external_gating_permitted_qps>).supports_client_filters(true).include_holdouts(true)+{edges+{client_ttl_seconds,log_eligibility_waterfall,is_holdout,priority,time_range+{start,end},node+{id,promotion_id,logging_data,max_impressions,triggers,contextual_filters+{clause_type,filters+{filter_type,unknown_action,value+{name,required,bool_value,int_value,string_value},extra_datas+{name,required,bool_value,int_value,string_value}},clauses+{clause_type,filters+{filter_type,unknown_action,value+{name,required,bool_value,int_value,string_value},extra_datas+{name,required,bool_value,int_value,string_value}},clauses+{clause_type,filters+{filter_type,unknown_action,value+{name,required,bool_value,int_value,string_value},extra_datas+{name,required,bool_value,int_value,string_value}},clauses+{clause_type,filters+{filter_type,unknown_action,value+{name,required,bool_value,int_value,string_value},extra_datas+{name,required,bool_value,int_value,string_value}}}}}},is_uncancelable,template+{name,parameters+{name,required,bool_value,string_value,color_value,}},creatives+{title+{text},content+{text},footer+{text},social_context+{text},social_context_images,primary_action{title+{text},url,limit,dismiss_promotion},secondary_action{title+{text},url,limit,dismiss_promotion},dismiss_action{title+{text},url,limit,dismiss_promotion},image.scale(<scale>)+{uri,width,height}}}}}}}","5858":"Query+QuickPromotionSurfaceQuery:+Viewer+{viewer()+{eligible_promotions.trigger_context_v2(<trigger_context_v2>).ig_parameters(<ig_parameters>).trigger_name(<trigger_name>).surface_nux_id(<surface>).external_gating_permitted_qps(<external_gating_permitted_qps>).supports_client_filters(true).include_holdouts(true)+{edges+{client_ttl_seconds,log_eligibility_waterfall,is_holdout,priority,time_range+{start,end},node+{id,promotion_id,logging_data,max_impressions,triggers,contextual_filters+{clause_type,filters+{filter_type,unknown_action,value+{name,required,bool_value,int_value,string_value},extra_datas+{name,required,bool_value,int_value,string_value}},clauses+{clause_type,filters+{filter_type,unknown_action,value+{name,required,bool_value,int_value,string_value},extra_datas+{name,required,bool_value,int_value,string_value}},clauses+{clause_type,filters+{filter_type,unknown_action,value+{name,required,bool_value,int_value,string_value},extra_datas+{name,required,bool_value,int_value,string_value}},clauses+{clause_type,filters+{filter_type,unknown_action,value+{name,required,bool_value,int_value,string_value},extra_datas+{name,required,bool_value,int_value,string_value}}}}}},is_uncancelable,template+{name,parameters+{name,required,bool_value,string_value,color_value,}},creatives+{title+{text},content+{text},footer+{text},social_context+{text},social_context_images,primary_action{title+{text},url,limit,dismiss_promotion},secondary_action{title+{text},url,limit,dismiss_promotion},dismiss_action{title+{text},url,limit,dismiss_promotion},image.scale(<scale>)+{uri,width,height}}}}}}}","5734":"Query+QuickPromotionSurfaceQuery:+Viewer+{viewer()+{eligible_promotions.trigger_context_v2(<trigger_context_v2>).ig_parameters(<ig_parameters>).trigger_name(<trigger_name>).surface_nux_id(<surface>).external_gating_permitted_qps(<external_gating_permitted_qps>).supports_client_filters(true).include_holdouts(true)+{edges+{client_ttl_seconds,log_eligibility_waterfall,is_holdout,priority,time_range+{start,end},node+{id,promotion_id,logging_data,max_impressions,triggers,contextual_filters+{clause_type,filters+{filter_type,unknown_action,value+{name,required,bool_value,int_value,string_value},extra_datas+{name,required,bool_value,int_value,string_value}},clauses+{clause_type,filters+{filter_type,unknown_action,value+{name,required,bool_value,int_value,string_value},extra_datas+{name,required,bool_value,int_value,string_value}},clauses+{clause_type,filters+{filter_type,unknown_action,value+{name,required,bool_value,int_value,string_value},extra_datas+{name,required,bool_value,int_value,string_value}},clauses+{clause_type,filters+{filter_type,unknown_action,value+{name,required,bool_value,int_value,string_value},extra_datas+{name,required,bool_value,int_value,string_value}}}}}},is_uncancelable,template+{name,parameters+{name,required,bool_value,string_value,color_value,}},creatives+{title+{text},content+{text},footer+{text},social_context+{text},social_context_images,primary_action{title+{text},url,limit,dismiss_promotion},secondary_action{title+{text},url,limit,dismiss_promotion},dismiss_action{title+{text},url,limit,dismiss_promotion},image.scale(<scale>)+{uri,width,height}}}}}}}"}',
             "vc_policy": "default",
             "_csrftoken": self.token,
@@ -793,15 +789,15 @@ class API(object):
 
     # ====== PHOTO METHODS ====== #
     def upload_photo(
-        self,
-        photo,
-        caption=None,
-        upload_id=None,
-        from_video=False,
-        force_resize=False,
-        options={},
-        user_tags=None,
-        is_sidecar=False
+            self,
+            photo,
+            caption=None,
+            upload_id=None,
+            from_video=False,
+            force_resize=False,
+            options={},
+            user_tags=None,
+            is_sidecar=False
     ):
         """Upload photo to Instagram
 
@@ -830,14 +826,14 @@ class API(object):
         )
 
     def upload_album(
-        self,
-        photos,
-        caption=None,
-        upload_id=None,
-        from_video=False,
-        force_resize=False,
-        options={},
-        user_tags=None
+            self,
+            photos,
+            caption=None,
+            upload_id=None,
+            from_video=False,
+            force_resize=False,
+            options={},
+            user_tags=None
     ):
         """Upload album to Instagram
 
@@ -879,7 +875,7 @@ class API(object):
 
     # ====== VIDEO METHODS ====== #
     def upload_video(
-        self, video, caption=None, upload_id=None, thumbnail=None, options={}
+            self, video, caption=None, upload_id=None, thumbnail=None, options={}
     ):
         """Upload video to Instagram
 
@@ -903,15 +899,15 @@ class API(object):
         return download_video(self, media_id, filename, media, folder)
 
     def configure_video(
-        self,
-        upload_id,
-        video,
-        thumbnail,
-        width,
-        height,
-        duration,
-        caption="",
-        options={},
+            self,
+            upload_id,
+            video,
+            thumbnail,
+            width,
+            height,
+            duration,
+            caption="",
+            options={},
     ):
         """Post Configure Video
         (send caption, thumbnail andmore else to Instagram)
@@ -1051,17 +1047,17 @@ class API(object):
     # "is_carousel_bumped_post":"false", "container_module":"feed_timeline",
     # "feed_position":"0" # noqa
     def like(
-        self,
-        media_id,
-        double_tap=None,
-        container_module="feed_short_url",
-        feed_position=0,
-        username=None,
-        user_id=None,
-        hashtag_name=None,
-        hashtag_id=None,
-        entity_page_name=None,
-        entity_page_id=None,
+            self,
+            media_id,
+            double_tap=None,
+            container_module="feed_short_url",
+            feed_position=0,
+            username=None,
+            user_id=None,
+            hashtag_name=None,
+            hashtag_id=None,
+            entity_page_name=None,
+            entity_page_id=None,
     ):
         data = self.action_data(
             {
@@ -1384,11 +1380,11 @@ class API(object):
     @staticmethod
     def generate_signature(data):
         body = (
-            hmac.new(
-                config.IG_SIG_KEY.encode("utf-8"), data.encode("utf-8"), hashlib.sha256
-            ).hexdigest()
-            + "."
-            + urllib.parse.quote(data)
+                hmac.new(
+                    config.IG_SIG_KEY.encode("utf-8"), data.encode("utf-8"), hashlib.sha256
+                ).hexdigest()
+                + "."
+                + urllib.parse.quote(data)
         )
         signature = "signed_body={body}&ig_sig_key_version={sig_key}"
         return signature.format(sig_key=config.SIG_KEY_VERSION, body=body)
@@ -1415,16 +1411,16 @@ class API(object):
             return generated_uuid.replace("-", "")
 
     def get_total_followers_or_followings(  # noqa: C901
-        self,
-        user_id,
-        amount=None,
-        which="followers",
-        filter_private=False,
-        filter_business=False,
-        filter_verified=False,
-        usernames=False,
-        to_file=None,
-        overwrite=False,
+            self,
+            user_id,
+            amount=None,
+            which="followers",
+            filter_private=False,
+            filter_business=False,
+            filter_verified=False,
+            usernames=False,
+            to_file=None,
+            overwrite=False,
     ):
         from io import StringIO
 
@@ -1515,13 +1511,20 @@ class API(object):
     def get_total_followings(self, user_id, amount=None):
         return self.get_total_followers_or_followings(user_id, amount, "followings")
 
-    def get_total_user_feed(self, user_id, min_timestamp=None):
+    def get_total_user_feed(self, user_id, min_timestamp=None, statics=False):
         return self.get_last_user_feed(
-            user_id, amount=float("inf"), min_timestamp=min_timestamp
+            user_id, amount=float("inf"), min_timestamp=min_timestamp, statics=statics
         )
 
-    def get_last_user_feed(self, user_id, amount, min_timestamp=None):
+    def get_last_user_feed(self, user_id, amount, min_timestamp=None, statics=False):
         user_feed = []
+        stats = {
+            "comments": 0,
+            "likes": 0,
+            "medias": 0
+        }
+        total_comments = 0
+        total_likes = 0
         next_max_id = ""
         while True:
             if len(user_feed) >= float(amount):
@@ -1530,10 +1533,17 @@ class API(object):
             self.get_user_feed(user_id, next_max_id, min_timestamp)
             last_json = self.last_json
             if "items" not in last_json:
-                return user_feed
+                return user_feed if not statics else stats
+            for item in last_json["items"]:
+                total_likes = total_likes + item["like_count"]
+                total_comments = total_comments + item["comment_count"]
+
             user_feed += last_json["items"]
             if not last_json.get("more_available"):
-                return user_feed
+                stats["comments"] = total_comments
+                stats["likes"] = total_likes
+                stats["medias"] = len(user_feed)
+                return user_feed if not statics else stats
             next_max_id = last_json.get("next_max_id", "")
 
     def get_total_hashtag_feed(self, hashtag_str, amount=100):
@@ -1556,8 +1566,8 @@ class API(object):
                     return hashtag_feed[:amount]
                 next_max_id = last_json.get("next_max_id", "")
 
-    def get_total_self_user_feed(self, min_timestamp=None):
-        return self.get_total_user_feed(self.user_id, min_timestamp)
+    def get_total_self_user_feed(self, min_timestamp=None, statics=False):
+        return self.get_total_user_feed(self.user_id, min_timestamp, statics=statics)
 
     def get_total_self_followers(self):
         return self.get_total_followers(self.user_id)
@@ -1661,7 +1671,7 @@ class API(object):
         return self.send_request(url)
 
     def get_reels_tray_feed(
-        self, reason=None
+            self, reason=None
     ):  # reason can be = cold_start or pull_to_refresh
         data = {
             "supported_capabilities_new": config.SUPPORTED_CAPABILITIES,
@@ -1732,7 +1742,7 @@ class API(object):
         story_seen = {}
         now = int(time.time())
         for i, story in enumerate(
-            sorted(reels, key=lambda m: m["taken_at"], reverse=True)
+                sorted(reels, key=lambda m: m["taken_at"], reverse=True)
         ):
             story_seen_at = now - min(
                 i + 1 + random.randint(0, 2), max(0, now - story["taken_at"])
@@ -1927,13 +1937,13 @@ class API(object):
 
     def facebook_ota(self):
         url = (
-            "facebook_ota/?fields=update{download_uri,download_uri_delta_base,version_code_delta_base,download_uri_delta,fallback_to_full_update,file_size_delta,version_code,published_date,file_size,ota_bundle_type,resources_checksum,allowed_networks,release_id}&custom_user_id=3149016955&"
-            + self.generate_signature(config.SIG_KEY_VERSION)
-            + "&version_code=200396023&version_name="
-            + config.APP_VERSION
-            + "&custom_app_id=124024574287414&custom_device_id="
-            + self.phone_id
-            + ""
+                "facebook_ota/?fields=update{download_uri,download_uri_delta_base,version_code_delta_base,download_uri_delta,fallback_to_full_update,file_size_delta,version_code,published_date,file_size,ota_bundle_type,resources_checksum,allowed_networks,release_id}&custom_user_id=3149016955&"
+                + self.generate_signature(config.SIG_KEY_VERSION)
+                + "&version_code=200396023&version_name="
+                + config.APP_VERSION
+                + "&custom_app_id=124024574287414&custom_device_id="
+                + self.phone_id
+                + ""
         )
         return self.send_request(url)
 
@@ -2056,3 +2066,170 @@ class API(object):
         return self.send_request(
             "oembed/?url={}".format(urllib.parse.quote(link, safe=""))
         )
+
+    def get_media_id_from_link(self, link):
+        if "instagram.com/p/" not in link:
+            self.logger.error("Unexpected link")
+            return False
+        link = link.split("/")
+        code = link[link.index("p") + 1]
+
+        alphabet = {
+            "-": 62,
+            "1": 53,
+            "0": 52,
+            "3": 55,
+            "2": 54,
+            "5": 57,
+            "4": 56,
+            "7": 59,
+            "6": 58,
+            "9": 61,
+            "8": 60,
+            "A": 0,
+            "C": 2,
+            "B": 1,
+            "E": 4,
+            "D": 3,
+            "G": 6,
+            "F": 5,
+            "I": 8,
+            "H": 7,
+            "K": 10,
+            "J": 9,
+            "M": 12,
+            "L": 11,
+            "O": 14,
+            "N": 13,
+            "Q": 16,
+            "P": 15,
+            "S": 18,
+            "R": 17,
+            "U": 20,
+            "T": 19,
+            "W": 22,
+            "V": 21,
+            "Y": 24,
+            "X": 23,
+            "Z": 25,
+            "_": 63,
+            "a": 26,
+            "c": 28,
+            "b": 27,
+            "e": 30,
+            "d": 29,
+            "g": 32,
+            "f": 31,
+            "i": 34,
+            "h": 33,
+            "k": 36,
+            "j": 35,
+            "m": 38,
+            "l": 37,
+            "o": 40,
+            "n": 39,
+            "q": 42,
+            "p": 41,
+            "s": 44,
+            "r": 43,
+            "u": 46,
+            "t": 45,
+            "w": 48,
+            "v": 47,
+            "y": 50,
+            "x": 49,
+            "z": 51,
+        }
+
+        result = 0
+        for char in code:
+            result = result * 64 + alphabet[char]
+        return result
+
+    def get_link_from_media_id(self, media_id):
+        if media_id.find("_"):
+            new = media_id.split("_")
+            media_id = new[0]
+
+        alphabet = {
+            "-": 62,
+            "1": 53,
+            "0": 52,
+            "3": 55,
+            "2": 54,
+            "5": 57,
+            "4": 56,
+            "7": 59,
+            "6": 58,
+            "9": 61,
+            "8": 60,
+            "A": 0,
+            "C": 2,
+            "B": 1,
+            "E": 4,
+            "D": 3,
+            "G": 6,
+            "F": 5,
+            "I": 8,
+            "H": 7,
+            "K": 10,
+            "J": 9,
+            "M": 12,
+            "L": 11,
+            "O": 14,
+            "N": 13,
+            "Q": 16,
+            "P": 15,
+            "S": 18,
+            "R": 17,
+            "U": 20,
+            "T": 19,
+            "W": 22,
+            "V": 21,
+            "Y": 24,
+            "X": 23,
+            "Z": 25,
+            "_": 63,
+            "a": 26,
+            "c": 28,
+            "b": 27,
+            "e": 30,
+            "d": 29,
+            "g": 32,
+            "f": 31,
+            "i": 34,
+            "h": 33,
+            "k": 36,
+            "j": 35,
+            "m": 38,
+            "l": 37,
+            "o": 40,
+            "n": 39,
+            "q": 42,
+            "p": 41,
+            "s": 44,
+            "r": 43,
+            "u": 46,
+            "t": 45,
+            "w": 48,
+            "v": 47,
+            "y": 50,
+            "x": 49,
+            "z": 51,
+        }
+        result = ""
+        while media_id:
+            media_id, char = int(media_id) // 64, int(media_id) % 64
+            result += list(alphabet.keys())[list(alphabet.values()).index(char)]
+        return result[::-1]
+
+    def filter_medias(
+        self, media_items, filtration=True, quiet=False, is_comment=False
+    ):
+        return filter_medias(self, media_items, filtration, quiet, is_comment)
+
+    def get_your_medias(self, as_dict=False):
+        self.get_self_user_feed()
+        if as_dict:
+            return self.last_json.get("items")
+        return self.filter_medias(self.last_json.get("items"), False)
