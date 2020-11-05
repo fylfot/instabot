@@ -474,8 +474,7 @@ class API(object):
             return False
 
         worked = (
-            ("logged_in_user" in self.last_json)
-            and (self.last_json.get("action", "") == "close")
+            (self.last_json.get("action", "") == "close")
             and (self.last_json.get("status", "") == "ok")
         )
 
