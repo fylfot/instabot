@@ -260,7 +260,10 @@ def login_flow(self, just_logged_in=False, app_refresh_interval=1800):
                 )
             )
 
-            is_session_expired = (time.time() - self.last_login) > app_refresh_interval
+            is_session_expired = True
+
+            if self.last_login is not None:
+                is_session_expired = (time.time() - self.last_login) > app_refresh_interval
             if is_session_expired:
                 self.last_login = time.time()
                 self.client_session_id = self.generate_UUID(uuid_type=True)
