@@ -73,9 +73,11 @@ class API(object):
             log_filename=None,
             loglevel_file=logging.DEBUG,
             loglevel_stream=logging.INFO,
-            cli=True
+            cli=True,
+            user_id_from_commegram=0
     ):
         # Setup device and user_agent
+        self.user_id_from_commegram = user_id_from_commegram
         self.device = device or devices.DEFAULT_DEVICE
 
         self.cookie_fname = None
@@ -683,7 +685,12 @@ class API(object):
 
     @property
     def user_id(self):
-        return self.cookie_dict["ds_user_id"]
+        try:
+            ds_user_id = self.cookie_dict["ds_user_id"]
+            return ds_user_id
+        except Exception as err:
+            self.logger.error("Error when getting ds_user_id error message: %s cookiedict: %s", str(err), str(self.cookie_dict))
+            return self.user_id_from_commegram
 
     @property
     def mid(self):
