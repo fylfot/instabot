@@ -389,8 +389,8 @@ class API(object):
             allow_redirects=True,
         )
 
+        resp_json = json.loads(login.text)
         if login.status_code == 200:
-            resp_json = json.loads(login.text)
             if resp_json["status"] != "ok":
                 if "message" in resp_json:
                     self.logger.error("Login error: {}".format(resp_json["message"]))
@@ -407,9 +407,10 @@ class API(object):
                 if resp_json["message"] == "challenge_required":
                     raise CheckpointChallengeRequiredException("Challenge Required", "")
             self.save_successful_login()
-            # self.login_flow(True)
             return True
         else:
+            if resp_json["status"] == "fail" and resp_json["message"] == "challenge_required":
+                raise CheckpointChallengeRequiredException("Challenge Required", "")
             self.logger.error(
                 (
                     "Two-factor authentication request returns "
