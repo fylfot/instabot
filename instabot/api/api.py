@@ -47,7 +47,8 @@ from ..bot.bot_filter import filter_medias
 from .api_photo import configure_photo, download_photo, upload_photo, upload_album
 from .api_story import configure_story, download_story, upload_story_photo
 from .api_video import configure_video, download_video, upload_video
-from .instagram_exceptions import TwoFactorRequiredException, CheckpointChallengeRequiredException
+from .instagram_exceptions import TwoFactorRequiredException, CheckpointChallengeRequiredException, \
+    ActionsRestrictedByInstagramException
 from .prepare import delete_credentials, get_credentials
 
 try:
@@ -583,6 +584,9 @@ class API(object):
                     response.content
                 )
             )
+            if response.status_code == 429:
+                self.logger.info("Actions restricted by instagram :{} status_code:{}".format(self.username, response.status_code))
+                raise ActionsRestrictedByInstagramException("Actions Restricted by Instagram", "")
             if response.status_code != 404 and response.status_code != "404":
                 self.logger.error(
                     "Request returns {} error!".format(response.status_code)
