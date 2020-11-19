@@ -26,3 +26,9 @@ class ActionsRestrictedByInstagramException(Exception):
     def __init__(self, message, errors):
         super().__init__(message)
         self.errors = errors
+
+
+class ActionFeedbackRequiredException(Exception):
+    def __init__(self, message, errors):
+        super().__init__(message)
+        self.errors = errors
