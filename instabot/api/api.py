@@ -48,7 +48,7 @@ from .api_photo import configure_photo, download_photo, upload_photo, upload_alb
 from .api_story import configure_story, download_story, upload_story_photo
 from .api_video import configure_video, download_video, upload_video
 from .instagram_exceptions import TwoFactorRequiredException, CheckpointChallengeRequiredException, \
-    ActionsRestrictedByInstagramException, ActionFeedbackRequiredException
+    ActionsRestrictedByInstagramException, ActionFeedbackRequiredException, ReloginRequiredException
 from .prepare import delete_credentials, get_credentials
 
 try:
@@ -369,10 +369,9 @@ class API(object):
                 raise TwoFactorRequiredException("2FA Required", self.device_id,
                                                  self.last_json["two_factor_info"]["two_factor_identifier"])
             else:
-                self.logger.error("Failed to login go to instagram and change your password")
                 self.save_failed_login()
                 delete_credentials(self.base_path)
-                return False
+                raise ReloginRequiredException("Relogin required")
 
     def two_factor_auth(self, **kwargs):
         self.logger.info("Two-factor authentication started")
