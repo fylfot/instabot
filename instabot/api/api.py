@@ -587,7 +587,7 @@ class API(object):
                 self.logger.info("Actions restricted by instagram :{} status_code:{}".format(self.username, response.status_code))
                 raise ActionsRestrictedByInstagramException("Actions Restricted by Instagram", "")
             if response.status_code != 404 and response.status_code != "404":
-                self.logger.error(
+                self.logger.warning(
                     "Request returns {} error!".format(response.status_code)
                 )
             try:
