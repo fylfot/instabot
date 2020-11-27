@@ -4,9 +4,11 @@ import imghdr
 import os
 import shutil
 import struct
+import json
 import time
+import random
+from uuid import uuid4
 
-from requests_toolbelt import MultipartEncoder
 
 from . import config
 
@@ -21,9 +23,11 @@ def download_photo(self, media_id, filename, media=False, folder="photos"):
         return True
     elif media["media_type"] == 1:
         filename = (
-            "{}_{}.jpg".format(media["user"]["username"], media_id)
+            "{username}_{media_id}.jpg".format(
+                username=media["user"]["username"], media_id=media_id
+            )
             if not filename
-            else "{}.jpg".format(filename)
+            else "{fname}.jpg".format(fname=filename)
         )
         images = media["image_versions2"]["candidates"]
         fname = os.path.join(folder, filename)
@@ -44,16 +48,13 @@ def download_photo(self, media_id, filename, media=False, folder="photos"):
                 video_included = True
                 continue
             filename_i = (
-                "{}_{}_{}.jpg".format(
-                    media["user"]["username"],
-                    media_id,
-                    index
+                "{username}_{media_id}_{i}.jpg".format(
+                    username=media["user"]["username"], media_id=media_id, i=index
                 )
                 if not filename
-                else "{}_{}.jpg".format(filename, index)
+                else "{fname}_{i}.jpg".format(fname=filename, i=index)
             )
-            images = \
-                media["carousel_media"][index]["image_versions2"]["candidates"]
+            images = media["carousel_media"][index]["image_versions2"]["candidates"]
             fname = os.path.join(folder, filename_i)
             if os.path.exists(fname):
                 return os.path.abspath(fname)
@@ -73,27 +74,32 @@ def compatible_aspect_ratio(size):
     min_ratio, max_ratio = 4.0 / 5.0, 90.0 / 47.0
     width, height = size
     ratio = width * 1.0 / height * 1.0
-    print("FOUND: w:{} h:{} r:{}".format(width, height, ratio))
+    print("FOUND: w:{w} h:{h} r:{r}".format(w=width, h=height, r=ratio))
     return min_ratio <= ratio <= max_ratio
 
 
-def configure_photo(self, upload_id, photo, caption=""):
-    (w, h) = get_image_size(photo)
-    data = self.json_data(
-        {
+def configure_photo(self, upload_id, photo, caption="", user_tags=None, is_sidecar=False):
+    width, height = get_image_size(photo)
+    data = {
             "media_folder": "Instagram",
             "source_type": 4,
             "caption": caption,
             "upload_id": upload_id,
             "device": self.device_settings,
             "edits": {
-                "crop_original_size": [w * 1.0, h * 1.0],
+                "crop_original_size": [width * 1.0, height * 1.0],
                 "crop_center": [0.0, 0.0],
                 "crop_zoom": 1.0,
             },
-            "extra": {"source_width": w, "source_height": h},
+            "extra": {"source_width": width, "source_height": height},
         }
-    )
+    if user_tags:
+        data['usertags'] = user_tags
+
+    if is_sidecar:
+        return data
+
+    data = self.json_data(data)
     return self.send_request("media/configure/?", data)
 
 
@@ -105,6 +111,8 @@ def upload_photo(
     from_video=False,
     force_resize=False,
     options={},
+    user_tags=None,
+    is_sidecar=False
 ):
     """Upload photo to Instagram
 
@@ -120,74 +128,154 @@ def upload_photo(
                          configure_timeout, rename (Dict)
                          Designed to reduce the number of function arguments!
                          This is the simplest request object.
+    @param user_tags     Tag other users (List)
+                         usertags = [
+                            {"user_id": user_id, "position": [x, y]}
+                         ]
+    @param is_sidecar    An album element (Boolean)
 
-    @return Boolean
+    @return Object with state of uploading to Instagram (or False), Dict for is_sidecar
     """
-    options = dict(
-        {"configure_timeout": 15, "rename": True},
-        **(options or {})
-    )
+    if user_tags is None:
+        usertags = None
+    else:
+        tags = {'in': [{'user_id': user['user_id'], 'position': [user['x'], user['y']]} for user in user_tags]}
+        usertags = json.dumps(tags, separators=(',', ':'))
+
+    options = dict({"configure_timeout": 15, "rename": True}, **(options or {}))
     if upload_id is None:
-        upload_id = str(int(time.time() * 1000))
+        upload_id = int(time.time() * 1000)
     if not photo:
         return False
     if not compatible_aspect_ratio(get_image_size(photo)):
-        self.logger.error(
-            "Photo does not have a compatible photo aspect ratio."
-        )
+        self.logger.error("Photo does not have a compatible photo aspect ratio.")
         if force_resize:
             photo = resize_image(photo)
         else:
             return False
-
-    with open(photo, "rb") as f:
-        photo_bytes = f.read()
-
-    data = {
+    waterfall_id = str(uuid4())
+    # upload_name example: '1576102477530_0_7823256191'
+    # upload_name example:  'fb_uploader_1585807380927'
+    upload_name = "fb_uploader_{upload_id}".format(upload_id=upload_id)
+    rupload_params = {
+        "retry_context": '{"num_step_auto_retry":0,"num_reupload":0,"num_step_manual_retry":0}',
+        "media_type": "1",
+        "xsharing_user_ids": "[]",
         "upload_id": upload_id,
-        "_uuid": self.uuid,
-        "_csrftoken": self.token,
-        "image_compression": '{"lib_name":"jt","lib_version":"1.3.0",' +
-        '"quality":"87"}',
-        "photo": (
-            "pending_media_%s.jpg" % upload_id,
-            photo_bytes,
-            "application/octet-stream",
-            {"Content-Transfer-Encoding": "binary"},
+        "image_compression": json.dumps(
+            {"lib_name": "moz", "lib_version": "3.1.m", "quality": "80"}
         ),
     }
-    m = MultipartEncoder(data, boundary=self.uuid)
+    if is_sidecar:
+        rupload_params["is_sidecar"] = "1"
+    photo_data = open(photo, "rb").read()
+    photo_len = str(len(photo_data))
     self.session.headers.update(
         {
-            "X-IG-Capabilities": "3Q4=",
-            "X-IG-Connection-Type": "WIFI",
-            "Cookie2": "$Version=1",
-            "Accept-Language": "en-US",
-            "Accept-Encoding": "gzip, deflate",
-            "Content-type": m.content_type,
-            "Connection": "close",
-            "User-Agent": self.user_agent,
+            "Accept-Encoding": "gzip",
+            "X-Instagram-Rupload-Params": json.dumps(rupload_params),
+            "X_FB_PHOTO_WATERFALL_ID": waterfall_id,
+            "X-Entity-Type": "image/jpeg",
+            "Offset": "0",
+            "X-Entity-Name": upload_name,
+            "X-Entity-Length": photo_len,
+            "Content-Type": "application/octet-stream",
+            "Content-Length": photo_len,
+            "Accept-Encoding": "gzip",
         }
     )
     response = self.session.post(
-        config.API_URL + "upload/photo/",
-        data=m.to_string()
+        "https://{domain}/rupload_igphoto/{name}".format(
+            domain=config.API_DOMAIN, name=upload_name
+        ),
+        data=photo_data,
     )
 
+    if response.status_code != 200:
+        self.logger.error(
+            "Photo Upload failed with the following response: {}".format(response)
+        )
+        return False
+    # update the upload id
+    upload_id = int(response.json()['upload_id'])
+    if from_video:
+        # Not configure when from_video is True
+        return True
+    # CONFIGURE
     configure_timeout = options.get("configure_timeout")
-    if response.status_code == 200:
-        for attempt in range(4):
-            if configure_timeout:
-                time.sleep(configure_timeout)
-            if self.configure_photo(upload_id, photo, caption):
-                media = self.last_json.get("media")
-                self.expose()
-                if options.get("rename"):
-                    from os import rename
-
-                    rename(photo, "{}.REMOVE_ME".format(photo))
-                return media
+    for attempt in range(4):
+        if configure_timeout:
+            time.sleep(configure_timeout)
+        if is_sidecar:
+            configuration = self.configure_photo(upload_id, photo, caption, usertags, is_sidecar=True)
+            if options.get("rename"):
+                os.rename(photo, "{fname}.REMOVE_ME".format(fname=photo))
+            return configuration
+        elif self.configure_photo(upload_id, photo, caption, usertags, is_sidecar=False):
+            media = self.last_json.get("media")
+            self.expose()
+            if options.get("rename"):
+                os.rename(photo, "{fname}.REMOVE_ME".format(fname=photo))
+            return media
     return False
+
+
+def upload_album(
+    self,
+    photos,
+    caption=None,
+    upload_id=None,
+    from_video=False,
+    force_resize=False,
+    options={},
+    user_tags=None
+):
+    """Upload album to Instagram
+
+    @param photos        List of paths to photo files (List of strings)
+    @param caption       Media description (String)
+    @param upload_id     Unique upload_id (String). When None, then generate
+                         automatically
+    @param from_video    A flag that signals whether the photo is loaded from
+                         the video or by itself
+                         (Boolean, DEPRECATED: not used)
+    @param force_resize  Force photo resize (Boolean)
+    @param options       Object with difference options, e.g.
+                         configure_timeout, rename (Dict)
+                         Designed to reduce the number of function arguments!
+                         This is the simplest request object.
+    @param user_tags
+
+    @return Boolean
+    """
+    if not photos:
+        return False
+    photo_metas = []
+    for photo in photos:
+        result = self.upload_photo(photo, caption, None, from_video, force_resize, options, user_tags, is_sidecar=True)
+        if not result:
+            self.logger.error("Could not upload photo {photo} for the album!".format(photo=photo))
+            return False
+        upload_config = {
+            "upload_id": str(result["upload_id"]), "width": int(result["edits"]["crop_original_size"][0]),
+            "height": int(result["edits"]["crop_original_size"][1])
+        }
+        if "usertags" in result:
+            upload_config["usertags"] = result["usertags"]
+        photo_metas.append(upload_config)
+    if upload_id is None:
+        upload_id = str(int(time.time() * 1000))
+    data = self.json_data({
+        "timezone_offset": "0",
+        "source_type": "4",
+        "device_id": self.device_id,
+        "caption": caption,
+        "client_sidecar_id": upload_id,
+        "upload_id": upload_id,
+        "device": result["device"],
+        "children_metadata": photo_metas
+    })
+    return self.send_request("media/configure_sidecar/", post=data)
 
 
 def get_image_size(fname):
@@ -228,13 +316,13 @@ def resize_image(fname):
     try:
         from PIL import Image, ExifTags
     except ImportError as e:
-        print("ERROR: {}".format(e))
+        print("ERROR: {err}".format(err=e))
         print(
             "Required module `PIL` not installed\n"
             "Install with `pip install Pillow` and retry"
         )
         return False
-    print("Analizing `{}`".format(fname))
+    print("Analizing `{fname}`".format(fname=fname))
     h_lim = {"w": 90.0, "h": 47.0}
     v_lim = {"w": 4.0, "h": 5.0}
     img = Image.open(fname)
@@ -257,7 +345,7 @@ def resize_image(fname):
             img = img.rotate(deg, expand=True)
             (w, h) = img.size
     except (AttributeError, KeyError, IndexError) as e:
-        print("No exif info found (ERR: {})".format(e))
+        print("No exif info found (ERR: {err})".format(err=e))
         pass
     img = img.convert("RGBA")
     ratio = w * 1.0 / h * 1.0
@@ -300,12 +388,8 @@ def resize_image(fname):
             print("Resizing image")
             img = img.resize((1080, 1080), Image.ANTIALIAS)
     (w, h) = img.size
-    new_fname = "{}.CONVERTED.jpg".format(fname)
-    print("Saving new image w:{w} h:{h} to `{f}`".format(
-        w=w,
-        h=h,
-        f=new_fname)
-    )
+    new_fname = "{fname}.CONVERTED.jpg".format(fname=fname)
+    print("Saving new image w:{w} h:{h} to `{f}`".format(w=w, h=h, f=new_fname))
     new = Image.new("RGB", img.size, (255, 255, 255))
     new.paste(img, (0, 0, w, h), img)
     new.save(new_fname, quality=95)
@@ -323,7 +407,7 @@ def stories_shaper(fname):
     try:
         from PIL import Image, ImageFilter
     except ImportError as e:
-        print("ERROR: {}".format(e))
+        print("ERROR: {err}".format(err=e))
         print(
             "Required module `PIL` not installed\n"
             "Install with `pip install Pillow` and retry"
@@ -332,7 +416,7 @@ def stories_shaper(fname):
     img = Image.open(fname)
     if (img.size[0], img.size[1]) == (1080, 1920):
         print("Image is already 1080x1920. Just converting image.")
-        new_fname = "{}.STORIES.jpg".format(fname)
+        new_fname = "{fname}.STORIES.jpg".format(fname=fname)
         new = Image.new("RGB", (img.size[0], img.size[1]), (255, 255, 255))
         new.paste(img, (0, 0, img.size[0], img.size[1]))
         new.save(new_fname)
@@ -369,9 +453,7 @@ def stories_shaper(fname):
                 height_size = int(float(img.size[1]) * float(width_percent))
                 img = img.resize((min_width, height_size), Image.ANTIALIAS)
                 img_bg.paste(
-                    img, (int(540 - img.size[0] / 2), int(
-                        960 - img.size[1] / 2
-                    ))
+                    img, (int(540 - img.size[0] / 2), int(960 - img.size[1] / 2))
                 )
             else:
                 img_bg.paste(img, (int(540 - img.size[0] / 2), 0))
@@ -379,19 +461,14 @@ def stories_shaper(fname):
             width_percent = min_width / float(img.size[0])
             height_size = int(float(img.size[1]) * float(width_percent))
             img = img.resize((min_width, height_size), Image.ANTIALIAS)
-            img_bg.paste(img, (int(540 - img.size[0] / 2), int(
-                960 - img.size[1] / 2
-            )))
-        new_fname = "{}.STORIES.jpg".format(fname)
+            img_bg.paste(img, (int(540 - img.size[0] / 2), int(960 - img.size[1] / 2)))
+        new_fname = "{fname}.STORIES.jpg".format(fname=fname)
         print(
             "Saving new image w:{w} h:{h} to `{f}`".format(
                 w=img_bg.size[0], h=img_bg.size[1], f=new_fname
             )
         )
-        new = Image.new(
-            "RGB",
-            (img_bg.size[0], img_bg.size[1]), (255, 255, 255)
-        )
+        new = Image.new("RGB", (img_bg.size[0], img_bg.size[1]), (255, 255, 255))
         new.paste(img_bg, (0, 0, img_bg.size[0], img_bg.size[1]))
         new.save(new_fname)
         return new_fname

@@ -4,23 +4,30 @@ import getpass
 import os
 import sys
 
-SECRET_FILE = "secret.txt"
+DEFAULT_SECRET_DIR = os.path.abspath(os.getcwd()) + "/config/"
 
 
-def add_credentials():
+def get_credential_file(base_path=DEFAULT_SECRET_DIR):
+    return base_path + "secret.txt"
+
+
+def add_credentials(base_path):
+    SECRET_FILE = get_credential_file(base_path)
+
     with open(SECRET_FILE, "a") as f:
         print("Enter your login: ")
         f.write(str(sys.stdin.readline().strip()) + ":")
         print(
-            "Enter your password: (it will not be shown due to security " +
-            "reasons - just start typing and press Enter)"
+            "Enter your password: (it will not be shown due to security "
+            + "reasons - just start typing and press Enter)"
         )
         f.write(getpass.getpass() + "\n")
 
 
-def get_credentials(username=None):
+def get_credentials(base_path, username=None):
+    SECRET_FILE = get_credential_file(base_path)
     """Returns login and password stored in `secret.txt`."""
-    while not check_secret():
+    while not check_secret(base_path=base_path):
         pass
     while True:
         try:
@@ -41,11 +48,11 @@ def get_credentials(username=None):
         try:
             ind = int(sys.stdin.readline())
             if ind == 0:
-                add_credentials()
+                add_credentials(base_path)
                 continue
             elif ind == -1:
-                delete_credentials()
-                check_secret()
+                delete_credentials(base_path)
+                check_secret(base_path)
                 continue
             elif 0 <= ind - 1 < len(lines):
                 return lines[ind - 1]
@@ -53,7 +60,8 @@ def get_credentials(username=None):
             print("Wrong input, enter the number of the account to use.")
 
 
-def check_secret():
+def check_secret(base_path=DEFAULT_SECRET_DIR):
+    SECRET_FILE = get_credential_file(base_path)
     while True:
         if os.path.exists(SECRET_FILE):
             with open(SECRET_FILE, "r") as f:
@@ -70,26 +78,23 @@ def check_secret():
                     else:
                         return True
                 except Exception:
-                    print(
-                        "Your file is broken. We will delete it " +
-                        "and try again."
-                    )
+                    print("Your file is broken. We will delete it " + "and try again.")
                     os.remove(SECRET_FILE)
         else:
             print(
                 "We need to create a text file '%s' where "
-                "we will store your login and password from Instagram."
-                % SECRET_FILE
+                "we will store your login and password from Instagram." % SECRET_FILE
             )
             print("Don't worry. It will be stored locally.")
             while True:
-                add_credentials()
+                add_credentials(base_path)
                 print("Do you want to add another account? (y/n)")
                 if "y" not in sys.stdin.readline():
                     break
 
 
-def delete_credentials():
+def delete_credentials(base_path):
+    SECRET_FILE = get_credential_file(base_path)
     if os.path.exists(SECRET_FILE):
         os.remove(SECRET_FILE)
 
